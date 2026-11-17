@@ -8,7 +8,7 @@
 // ===== MATH =====
 let M = Math,
 sin = M.sin, cos = M.cos, abs = M.abs, min = M.min, max = M.max, PI = M.PI, H2 = PI / 2, hyp = M.hypot, at2 = M.atan2,
-CITY = [],
+WT = [.92, .92, .9],
 // ===== MODELS =====
 // Every model is an array of boxes in local space (+Z forward, y=0 ground).
 MODELS = {},
@@ -29,10 +29,10 @@ clamp = (v, a, b) => v < a ? a : v > b ? b : v,
 angDiff = (a, b) => at2(sin(b - a), cos(b - a)),
 rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647, rs = () => rnd() - .5,
 // 4x4 column-major matrices
-mul = (a, b, o = [], i, j, k) => {
+mul = (a, b, o = [], i, j, k, s) => {
   
   for (i = 0; i < 4; i++) for (j = 0; j < 4; j++) {
-    let s = 0;
+    s = 0;
     for (k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k];
     o[i * 4 + j] = s;
   }
@@ -65,7 +65,7 @@ box = (A, x, y, z, w, h, d, col, hs = [w / 2, h / 2, d / 2], cy = y + h / 2, c =
 // 3-vector helpers (first 3 components of a and b): difference, unit vector, dot product
 sub = (a, b) => [0, 1, 2].map(i => a[i] - b[i]),
 // solid: the sea beyond the waterline (x = -48) or any obstacle (hg; out of the city: the countryside, cs)
-solid = (x, z) => x < -48 || hg(x, z),
+solid = (x, z) => -48 > x || hg(x, z),
 mark = (x, z, w, d, h = 2, i, j) => {
   for (i = fl(x - w / 2); i < x + w / 2; i++) for (j = fl(z - d / 2); j < z + d / 2; j++) GRID[gi(i, j)] = h;
 },
@@ -78,13 +78,13 @@ mark = (x, z, w, d, h = 2, i, j) => {
 // rect; v runs top-down over the lathe height. Both ends are closed with fans.
 // Colored lathe: G = [r, g, b] (no texture). X, Y, Z offset the whole lathe.
 lathe = (A, R, G, N = 8, X = 0, Y = 0, Z = 0) => {
-  let n = R.length / 4, Y0 = R[0], Y1 = R[n * 4 - 4], L = [9, 9, 9, 9], H = [-9, -9, -9, -9], i, a, j, J, x, c, o;
-  let t = i => (i - .5) * 2 * PI / N, q = (i, a = i * 2 * PI / N, c = cos(a)) => c > .4 ? 0 : c < -.4 ? 2 : sin(a) > 0 ? 1 : 3;
+  let n = R.length / 4, Y1 = R[n * 4 - 4], L = [9, 9, 9, 9], H = [-9, -9, -9, -9], i, a, j, J, x, c, o;
+  let t = i => (i - .5) * 2 * PI / N, q = (i, a = i * 2 * PI / N, c = cos(a)) => c > .4 ? 0 : -.4 > c ? 2 : sin(a) > 0 ? 1 : 3;
   let pu = (k, a) => [1 + sin(a), 1 - cos(a), 1 - sin(a), 1 + cos(a)][k] / 2;
   for (i = 0; i < N; i++) for (a of [t(i), t(i + 1)]) { let k = q(i), u = pu(k, a); L[k] = min(L[k], u); H[k] = max(H[k], u); }
   // vertex on ring j at angle a in arc k; caps (c = +-1): flat normal, o = 1 for the center
   // (P, Q, m: ring slope for the normal: neighbours' mean radius change over their height)
-  let V = (j, a, k, c, o, J = j * 4, y = R[J], f = cos(a), r = G[k], u = o ? .5 : (pu(k, a) - L[k]) / (H[k] - L[k] || 1), v = (Y1 - y) / (Y1 - Y0),
+  let V = (j, a, k, c, o, J = j * 4, y = R[J], f = cos(a), r = G[k], u = o ? .5 : (pu(k, a) - L[k]) / (H[k] - L[k] || 1), v = (Y1 - y) / (Y1 - R[0]),
     P = max(J - 4, 0), Q = min(J + 4, n * 4 - 4), m = i => R[i + 1] + R[i + 2],
     N3 = c ? [0, c, 0] : [sin(a), (m(P) - m(Q)) / 2 / (R[Q] - R[P]), f], l = hyp(...N3)) => [X + (o ? 0 : R[J + 1] * sin(a)), Y + y, Z + (o ? 0 : R[J + (f > 0 ? 2 : 3)] * f), ...G[0].map ? uvt(r, u, v) : C4(G), ...N3.map(x => x / l)];
   for (i = 0; i < N; i++) {
@@ -166,14 +166,8 @@ HELD = {}, PRESSED = {},
 keyCode = e => KEYMAP[kn(e.key)], bt = (S, b) => [...'' + (({ 1: 14, 2: 3, 3: 25 })[b] || b)].some(n => S['P1_' + n] | S['P2_' + n]),
 hit = b => bt(PRESSED, b),
 // axis: 1 when a is held, -1 when b is held
-ax = (a, b) => held(a) - held(b);
-for (let code in CABINET_KEYS) for (let key of CABINET_KEYS[code]) KEYMAP[kn(key)] = code;
-addEventListener('keydown', e => {
-  let c = keyCode(e);
-  if (c) { if (!HELD[c]) PRESSED[c] = 1; HELD[c] = 1; audioInit(); }
-});
-addEventListener('keyup', e => { let c = keyCode(e); if (c) HELD[c] = 0; });
- let sgn = M.sign, rou = M.round, fl = M.floor,
+ax = (a, b) => held(a) - held(b),
+ sgn = M.sign, rou = M.round, fl = M.floor,
 toward = (v, t, s) => v < t ? min(v + s, t) : max(v - s, t),
 // packed numbers (NS): chars 32..126 minus the double quote, slash and backslash are indices 0..91 (ci); one char
 // per value in -.40...39 ((index - 40) / 100), or two chars (first index 80..91) for -5.52..5.51, step .01
@@ -203,10 +197,9 @@ tri = (A, p, q, r, cp, cq, cr, o) => poly(A, [[...p, ...C4(cp)], [...q, ...C4(cq
 // 'top' (snow on the Andes) from the upper ring up
 mountain = (A, x, z, r, h, top, o = [x, h * .3, z], C = [[.4, .39, .4], [.47, .45, .44], top, top], K = [], f, s, j, i) => {
   
-  for ([f, s] of [[0, 1], [.45, .62], [.78, .3], [1, 0]]) K.push([0, 1, 2, 3, 4, 5, 6, 7].map(i => {
-    let a = i * PI / 4 + rnd() * .5, q = r * s * (.75 + rnd() * .5);
-    return [x + sin(a) * q, h * f * (s ? .85 + rnd() * .3 : 1), z + cos(a) * q];
-  }));
+  for ([f, s] of [[0, 1], [.45, .62], [.78, .3], [1, 0]]) // (map callbacks: locals as extra default params after map's 3 arguments)
+  K.push([0, 1, 2, 3, 4, 5, 6, 7].map((i, _, __, a = i * PI / 4 + rnd() * .5, q = r * s * (.75 + rnd() * .5)) =>
+    [x + sin(a) * q, h * f * (s ? .85 + rnd() * .3 : 1), z + cos(a) * q]));
   for (j = 0; j < 3; j++) for (i = 0; i < 8; i++) {
     let a = K[j][i], b = K[j][(i + 1) % 8], c = K[j + 1][i], d = K[j + 1][(i + 1) % 8];
     tri(A, a, b, d, C[j], C[j], C[j + 1], o);
@@ -224,7 +217,7 @@ chamf = (A, x, y, z, w, h, d, c, u, v) => {
     quad(A, p, q, [q[0], t, q[2]], [p[0], t, p[2]], c, [x, y, z]);
     tri(A, [p[0], t, p[2]], [q[0], t, q[2]], [q[0], t, p[2]], c, c, c, [x, -99, z]);
   }
-};
+},
 // ===== CITY =====
 // Grid city: roads of width ROAD between square blocks of size BLOCK.
 // (written as literals below: ROAD 12, BLOCK 30, PITCH 42 = ROAD + BLOCK, NB 9, SIZE 390 = NB * PITCH + ROAD)
@@ -232,13 +225,13 @@ chamf = (A, x, y, z, w, h, d, c, u, v) => {
 // and the airport (z < 0). Each cell stores the obstacle height in meters (0 = free): the plane
 // crashes when it is lower than that.
 // grid origin X0 -50, Z0 -112 (literals)
-let GRID = new Uint8Array(512 * 512),
-gi = (x, z) => ((z - -112) | 0) * 512 + ((x - -50) | 0),
+GRID = new Uint8Array(512 * 512),
+gi = (x, z) => ((z + 112) | 0) * 512 + ((x + 50) | 0),
 // pier (wooden dock at z = PZ, x -80..-40, deck at y .5) and open water (sea minus the pier)
 // PZ: pier z = 160
-pier = (x, z) => x > -80 && x < -40 && abs(z - 160) < 1.6, wet = (x, z) => x < -48 && !pier(x, z),
+pier = (x, z) => x > -80 && -40 > x && abs(z - 160) < 1.6, wet = (x, z) => -48 > x && !pier(x, z),
 // walkable for the on-foot player: the sea is free (swimming) out to x = -400
-fs = (x, z) => x < -48 ? x < -400 : solid(x, z),
+fs = (x, z) => -48 > x ? -400 > x : solid(x, z),
 // obstacle height at a point: the grid over the city / beach / airport, the countryside around it
 hg = (x, z) => x < 390 && z < 390 && z > -112 ? x > -50 && GRID[gi(x, z)] : cs(x, z),
 // facade colors: 7 rgb triples packed one char per channel ((code - 35) / 100)
@@ -251,14 +244,21 @@ buildCity = () => {
   seed = 13; // fixed layout whatever rnd() ran before
   let A = CITY, BL = [], BC = [], cb = (...a) => box(A, ...a), cl = (...a) => lathe(A, ...a), MT = MODELS.mt = [];
   // cm: box on the ground, also marked solid (obstacle height m, default its height)
-  let cm = (x, z, w, h, d, c, m = h) => (cb(x, 0, z, w, h, d, c), mark(x, z, w, d, m)), bi, bj, x, z, w, d, h, t, i, j, s, v, u, k, o, c, col, rf, ro, sx, sz, y, cx, cz, pk, b;
+  let cm = (x, z, w, h, d, c, m = h) => (cb(x, 0, z, w, h, d, c), mark(x, z, w, d, m)), bi, bj, x, z, w, d, h, t, i, j, s, v, u, k, o, c, col, rf, ro, sx, sz, y, cx, cz, pk, b, kind;
   // MT: the mountain ring (drawn around the camera); mr: mountain at angle a (0 = east), distance d
-  let mr = (a, d, ...m) => mountain(MT, d * cos(a), d * sin(a), ...m);
+  let mr = (a, d, ...m) => mountain(MT, d * cos(a), d * sin(a), ...m),
+    // coast colors: red, awning / umbrella colors
+    RED = [.85, .2, .15], UC = [RED, [.2, .4, .8], [.95, .8, .2]],
+    // palm: the PALM model leaning toward a random side, a bit scaled
+    palm = (x, z, lx = rnd() - .5, lz = rnd() - .5) => {
+      mark(x, z, 1, 1, 8);
+      put(A, PALM, modelMat(x, 0, z, at2(lx, lz)), 1 + lz * .3);
+    };
   cb(195, -.2, 195, 390, .2, 390, TL(6)); // asphalt
   for (bi = 0; bi < 9; bi++) for (bj = 0; bj < 9; bj++) {
     cx = 12 + bi * 42 + 15; cz = 12 + bj * 42 + 15;
     cb(cx, 0, cz, 30, .18, 30, TL(5)); // sidewalk
-    let kind = rnd();
+    kind = rnd();
     BC.push([cx, cz, kind < .14 && bi * 9 + bj != 40]); // (no park benches inside the landmark tower)
     BK.push(bi == 4 && bj == 4 ? 2 : kind < .14 && bi * 9 + bj != 29 ? 1 : 0);
     if (bi == 3 && bj == 2) {
@@ -284,9 +284,9 @@ buildCity = () => {
       }
     } else {
       // buildings start on a 3 m bay boundary (block edge x, z = 42 i + 15) and fill whole bays: facade tiles align
-      let nx = rnd() < .5 ? 1 : 2, nz = rnd() < .5 ? 1 : 2, inner = 24;
+      let nx = rnd() < .5 ? 1 : 2, nz = rnd() < .5 ? 1 : 2; // inner block side 24 m
       for (i = 0; i < nx; i++) for (j = 0; j < nz; j++) {
-        w = inner / nx; d = inner / nz; x = cx - inner / 2 + w * (i + .5); z = cz - inner / 2 + d * (j + .5);
+        w = 24 / nx; d = 24 / nz; x = cx - 12 + w * (i + .5); z = cz - 12 + d * (j + .5);
         h = ((7 + rnd() * rnd() * 50) / 3.4 | 0) * 3.4 + .5; col = pal(rnd() * 7 | 0);
         rf = rnd() < .5;
         BL.push([x, z, w, d, h, col, rf, rf && rs() * w / 3, i ? 1 : -1, j ? 1 : -1]);
@@ -304,7 +304,6 @@ buildCity = () => {
     }
   }
   // ===== COAST (west): avenue x -12..0, sand x -48..-12, sea beyond (invisible wall at the waterline) =====
-  let RED = [.85, .2, .15], UC = [RED, [.2, .4, .8], [.95, .8, .2]];
   // far ground, 20 km each way: plain fields east of the waterline (under the city and the country chunks), the sea
   // west of it. North / south of here the country chunks continue the coast.
   // (2 km tiles: one huge quad loses depth precision against the patches .3 m above it)
@@ -312,11 +311,6 @@ buildCity = () => {
   cb(-10048, -.1, 0, 2e4, 0, 4e4, TL(9));
   cb(-30, -.2, 139, 36, .2, 502, TL(8));     // sand
   cb(-6, -.2, 139, 12, .2, 502, TL(6));        // seaside avenue
-  // palm: the PALM model leaning toward a random side, a bit scaled
-  let palm = (x, z, lx = rnd() - .5, lz = rnd() - .5) => {
-    mark(x, z, 1, 1, 8);
-    put(A, PALM, modelMat(x, 0, z, at2(lx, lz)), 1 + lz * .3);
-  };
   for (z = -100; z < 390; z += 21) palm(-14, z), rnd() < .5 && palm(-20 - rnd() * 22, z + 9);
   // umbrellas (pole + colored canopy)
   for (i = 0; i < 24; i++) {
@@ -329,7 +323,7 @@ buildCity = () => {
   }
   // pier: deck on posts from the sand into the sea
   cb(-60, .3, 160, 40, .2, 3, TL(18));
-  for (x = -78; x < -44; x += 5) for (v of [-1.3, 1.3]) cl(RR(-1.5, .2, .4, .17), TL(18, gy(.7)), 6, x, 0, 160 + v);
+  for (x = -78; -44 > x; x += 5) for (v of [-1.3, 1.3]) cl(RR(-1.5, .2, .4, .17), TL(18, gy(.7)), 6, x, 0, 160 + v);
   // lifeguard towers (legs, platform, cabin, roof) and kiosks
   for (z of [40, 200, 330]) {
     for (u of [-.9, .9]) for (v of [-.9, .9]) cb(-36 + u, 0, z + v, .2, 3, .2, TL(19));
@@ -377,7 +371,7 @@ buildCity = () => {
   cb(195, .02, -35, 110, 0, 30, TL(6, gy(1.15)));
   cb(258, .04, -25, .3, 0, 50, LY);
   cb(196, .04, -42, 124, 0, .3, LY);
-  for (x of [45, 325]) for (z = -68; z < -52; z += 2.4) cb(x, .05, z, 7, 0, 1.2, WT);
+  for (x of [45, 325]) for (z = -68; -52 > z; z += 2.4) cb(x, .05, z, 7, 0, 1.2, WT);
   cb(70, 0, -45, .12, 6, .12, WT);
   for (x = 150; x < 250; x += 16) cl(RR(0, .2, .6, .02), [1, .4, .1], 6, x, 0, -47);
   // horizon curtain (same rnd() calls as the old fixed ranges, so the city details keep their layout): the snowy
@@ -448,10 +442,8 @@ ext = (A, D, P = [], Z = [], Y = [], i, s) => {
   for (i = 1; i < D.length; i += 4) P.push(D.slice(i, i + 4)), Z.push(D[i]), Y.push(D[i + 1]);
   let z0 = min(...Z), z1 = max(...Z), y0 = min(...Y), y1 = max(...Y), o = [0, (y0 + y1) / 2, (z0 + z1) / 2];
   if (D[0] >= 0) for (s of [-1, 1]) face(A, P.map(([z, y, h]) => [s * h, y, z, (z1 - z) / (z1 - z0), (y1 - y) / (y1 - y0)]), D[0], o);
-  P.map(([z, y, h, c], i) => {
-    let [Z2, Y2, H2] = P[(i + 1) % P.length], f = +(y < Y2);
-    c < 0 || face(A, [[-h, y, z, 0, f], [h, y, z, 1, f], [H2, Y2, Z2, 1, 1 - f], [-H2, Y2, Z2, 0, 1 - f]], c, o);
-  });
+  P.map(([z, y, h, c], i, _, [Z2, Y2, H2] = P[(i + 1) % P.length], f = +(y < Y2)) =>
+    c < 0 || face(A, [[-h, y, z, 0, f], [h, y, z, 1, f], [H2, Y2, Z2, 1, 1 - f], [-H2, Y2, Z2, 0, 1 - f]], c, o));
 },
 // textured box: one region code for all faces, or six (-X, +X, bottom, top, back, front)
 bx = (A, x, y, z, w, h, d, ...c) => box(A, x, y, z, w, h, d, (c[1] ? c : [c, c, c, c, c, c].flat()).map(RC)),
@@ -459,15 +451,21 @@ bx = (A, x, y, z, w, h, d, ...c) => box(A, x, y, z, w, h, d, (c[1] ? c : [c, c, 
 cyl = (n, r, w, hb, tr, A = MODELS[n] = [], o = gy(0), P = [0, 1, 2, 3, 4, 5, 6, 7].map(i => [cos(i * PI / 4 + PI / 8) * r, sin(i * PI / 4 + PI / 8) * r]), s) => {
   
   for (s of [-w, w]) face(A, P.map(([c, d]) => [s, c, d, .5 + d / r / 2, .5 - c / r / 2]), hb, o);
-  P.map(([c, d], i) => { let [e, f] = P[(i + 1) % 8]; face(A, [[-w, c, d, 0, 0], [w, c, d, 1, 0], [w, e, f, 1, 1], [-w, e, f, 0, 1]], tr, o); });
+  P.map(([c, d], i, _, [e, f] = P[(i + 1) % 8]) => face(A, [[-w, c, d, 0, 0], [w, c, d, 1, 0], [w, e, f, 1, 1], [-w, e, f, 0, 1]], tr, o));
 },
-WT = [.92, .92, .9];
+CITY = [];
+for (let code in CABINET_KEYS) for (let key of CABINET_KEYS[code]) KEYMAP[kn(key)] = code;
+addEventListener('keydown', (e, c = keyCode(e)) => {
+  if (c) { if (!HELD[c]) PRESSED[c] = 1; HELD[c] = 1; audioInit(); }
+});
+addEventListener('keyup', (e, c = keyCode(e)) => { if (c) HELD[c] = 0; });
+((n, G, A, D) => {
 cyl('wc', .34, .12, 10, 11); // car
 cyl('wb', .5, .16, 11, 15);  // bus
 cyl('wm', .3, .05, 6, 7);    // motorbike
 // sd sedan (+pc police, same mesh), cv convertible (windshield frame only). n+'d': driver door, hinge at the origin.
-for (let [n, G] of [['sd', "qwDz'yypw|zcykL_zcykoy}z'yyI"], ['cv', "Iy}z'yyoyOzNysoqzNysoyuz'yyI"]]) {
-  let A = MODELS[n] = [], D = MODELS[n + 'd'] = [];
+for ([n, G] of [['sd', "qwDz'yypw|zcykL_zcykoy}z'yyI"], ['cv', "Iy}z'yyoyOzNysoqzNysoyuz'yyI"]]) {
+  A = MODELS[n] = []; D = MODELS[n + 'd'] = [];
   ext(A, ("JvcyTz Sv`y{z!MwDz'z#Vy}z'z#K{:yuz R{DyTy}V")); ext(A, G);
   // sill between the wheels and bumpers (dark), front seat backs, dashboard, steering wheel (driver side = +X)
   // [0 .28 0 1.8 .24 1.9] [0 .28 +-2.08 1.84 .24 .24] dark; [+-.42 1.02 -.85 .6 .35 .14] seats; [0 1.02 .57 1.5 .18 .4] [.42 1.12 .22 .34 .3 .05] dark
@@ -476,6 +474,7 @@ for (let [n, G] of [['sd', "qwDz'yypw|zcykL_zcykoy}z'yyI"], ['cv', "Iy}z'yyoyOzN
   if (n < 's') box(D, 0, .98, -.5, .04, .5, .9, [.18, .22, .28, 2]);
 }
 MODELS.pc = MODELS.sd;MODELS.pcd = MODELS.sdd;
+})();
 // bus (~10 m): one profile, the side maps the whole 32x16 side (windows over body), front glass over the lights
 let bu = MODELS.bu = [],
 // texel rects (32x32 cell): shirt front / back, its outer columns (sides), face, head side, hair, arm, arm side, hand, shoes
@@ -487,52 +486,17 @@ mv4 = (m, p, w) => [0, 1, 2, 3].map(j => m[j] * p[0] + m[j + 4] * p[1] + m[j + 8
 put = (A, S, m, s = 1, i) => {
   for (i = 0; i < S.length; i += 10) A.push(...mv4(m, S.slice(i, i + 3).map(v => v * s), 1).slice(0, 3), ...S.slice(i + 3, i + 7), ...mv4(m, S.slice(i + 7, i + 10), 0).slice(0, 3));
 },
-el = (h, r) => [-1, -.6, 0, .6, 1].flatMap(k => { let s = r * (1.05 - k * k) ** .5; return [k * h, s, s, s]; });
-ext(bu, "ZsVyOzCSsV|?zCT~;|?zCyS~OzMzC]~OyOzCX"); // [16, -5, .45, 1.25, 9, -5, 3.05, 1.25, 10, 4.85, 3.05, 1.25, 49, 5.05, 1.35, 1.25, 18, 5.05, .45, 1.25, 14]
-bx(bu, 0, .45, 3.4, 2.4, 2.5, .1, 12); // partition behind the driver (seats texture)
-MODELS.bud = MODELS.sdd;
-// police light bar b0/b1 (red and blue swap when flashing)
-// base [0 1.56 -.3 1.3 .08 .3], lamps [+-.35 1.62 -.3 .55 .16 .28]
-[0, 1].map(i => bl(MODELS['b' + i] = [], "JJzc+zHRiK&zi+yYZgLnzi+yYZg", gy(.1), i ? [1, .1, .1] : [.3, 0, 0], i ? [0, 0, .3] : [.1, .3, 1]));
-(() => {
-let CL = [12, 8, 4, 4];
-let MA = [8, 8, 4, 4], ZA = [0, 0, 4, 6], ZL = [4, 0, 4, 6];
-// q / qf: torso + neck + head (base / female). Shoulder pivots at (+-X, 1.36) just inside the torso, hips at (+-.1, .86).
-// Ring data packed one char per number (RG): y = .8 + .01 (code - 32), radii .005 (code - 32)
-// limbs (l): y = -.44 + .01 (code - 32), radii .017 + .001 (code - 32)
-let RG = (s, l) => [...s].map((c, i) => (c.charCodeAt() - 32) * (i % 4 ? l ? .001 : .005 : .01) + (i % 4 ? l ? .017 : 0 : l ? -.44 : .8));
-[' >44,B669?44HG96TI64[B21`0,,', ' B68*J8@9:22EAA4NC>4TD43Z>00^/,,'].map((R, i) => {
-  let A = MODELS[i ? 'qf' : 'q'] = [];
-  lathe(A, RG(R), [([16, 16, 8, 16]), [23, 16, 1, 16], [24, 16, 8, 16], ([16, 16, 1, 16])]);
-  lathe(A, RG('X++*e***'), all(MA), 6);
-  // head: narrow chin, jaw, cheeks, temples, crown
-  lathe(A, RG('^*.(c150j476r568z..1'), [[16, 0, 16, 16], CL, [0, 6, 8, 6], CL]);
-});
-// legs, pivot at the hip / knee: thighs qL / qR (+X / -X leg), shins + feet qS / qT. The +X leg takes the right
-// half of the pants front and the left half of the back; outer columns on the sides.
-[0, 1].map(k => {
-  let x = 4 - 4 * k, b = 8 + 4 * k, R = (y, h) => [[x, y, 4, h], [x + 3, y, 1, h], [b, y, 4, h], [x, y, 1, h]], A;
-  lathe(MODELS['q' + 'LR'[k]] = [], RG('!KPK8_ddOiis', 1), R(12, 10), 6);
-  A = MODELS['q' + 'ST'[k]] = [];
-  lathe(A, RG('&<<<<KFZNFKK', 1), R(22, 10), 6);
-  box(A, 0, -.45, .05, .11, .09, .25, [ZL, ZL, ZA, ZA, ZL, ZL]);
-});
-// arms, pivot at the shoulder / elbow: upper arm qu, forearm + hand qa
-let BA = (y, h) => [[8, y, 4, h], [12, y, 4, h], [8, y, 4, h], [12, y, 4, h]];
-lathe(MODELS.qu = [], RG('.577@=@@P<<<', 1), BA(0, 4), 6);
-lathe(MODELS.qa = [], RG('3/11B9<<N577', 1), BA(4, 4), 6);
-lathe(MODELS.qa, RG('(#774(33', 1), all(MA), 6);
-})();
+el = (h, r) => [-1, -.6, 0, .6, 1].flatMap((k, _, __, s = r * (1.05 - k * k) ** .5) => [k * h, s, s, s]),
 // trees: tapered trunk + 3 overlapping ellipsoid lobes, 3 variants (size, green)
-let TREE = [0, 1, 2].map(i => {
+TREE = [0, 1, 2].map(i => {
   let A = [];
   lathe(A, RR(0, .25, 3.4, .1), TL(10, gy(1), .1), 6);
   for (let [x, y, z, r, h] of NC("J}kJ{2zqy}}#y_z]z>x-}8xBzgzH", 5)) // [0 4.4 0 2 1.7] [.9 3.7 .6 1.5 1.2] [-.8 3.9 -.6 1.6 1.3]
     lathe(A, el(h, r + i * .2), TL(11, [.9 + i * .1, 1 + x * .1, .9]), 7, x, y + i * .3, z);
   return A;
-});
+}),
 // palm (leans toward +X): 6 ringed trunk sections along a curve, 7 drooping double-sided fronds, 3 coconuts
-let PALM = [], LAMP = [], BENCH = [], WD = TL(18, gy(1), .1),
+PALM = [], LAMP = [], BENCH = [], WD = TL(18, gy(1), .1),
 // dumpster: body, slanted lid, four wheels
 dump = (x, z, A = CITY, u, v) => {
   
@@ -549,13 +513,15 @@ dump = (x, z, A = CITY, u, v) => {
 // Pitch + swings a hanging limb forward. On foot: legs / arms in counter phase (arms lag a bit), knees bend on
 // the back swing, elbows bend more when running; bob, hip sway, torso counter-twist, run lean; idle breathing
 // and weight shift.
+// HP: hips -> mesh origin (the person meshes start .86 below the hips)
+HP = modelMat(0, -.86, 0, 0),
 person = (B, o, ph, v, md, g, lg) => {
   let fm = 74 >> o & 1, X = fm ? .185 : .2, s = sin(ph), w = md ? 0 : min(v * 25, 1), r = md ? 0 : clamp(v * 11 - .7, 0, 1),
     id = md ? 0 : sin(T / 900) * (1 - w), A = w * (.4 + .45 * r), j, F;
   // hips: bob (lowest with the legs spread), sway toward the stance leg, idle weight shift
   let Hp = mul(B, modelMat(s * w * (.025 + fm * .025) + id * .015, .86 + w * .035 * (abs(cos(ph)) - 1), 0, 0)),
     // torso pivots at the hips: breathing, counter-twist against the legs, run lean, sway roll
-    Tq = mul(mul(Hp, modelMat(0, sin(T / 600) * .006, 0, -s * w * .12, -r * .22 - w * .04, -s * w * (.04 + fm * .04) - id * .03)), modelMat(0, -.86, 0, 0));
+    Tq = mul(mul(Hp, modelMat(0, sin(T / 600) * .006, 0, -s * w * .12, -r * .22 - w * .04, -s * w * (.04 + fm * .04) - id * .03)), HP);
   dl([fm ? 'qf' : 'q', Tq, , o]);
   // joint world positions for the ragdoll (JT): pelvis, head, then per side shoulder, elbow, hand, knee, foot
   JT = [tp(Hp), tp(Tq, 1.55, .08)];
@@ -568,9 +534,8 @@ person = (B, o, ph, v, md, g, lg) => {
       : [A * sq + r * .1, -w * (.1 + (.7 + .8 * r) * max(0, -sin(q - .6))) - .03, -A * .8 * sin(q - .25) + r * .1, .15 + w * .15 + r * 1.3, j * .06];
     if (g > 1) c = 1.2, d = .5;
     if (g == 1) k ? (c = 1.5, d = e = 0) : (c = 1.25, d = .5, e = -.5);
-    let U = mul(Hp, modelMat(j * .1, 0, 0, 0, a, md > 2 ? j * .25 : j < 0 && -lg || 0)), S = mul(Tq, modelMat(j * X, 1.36, 0, 0, c, e));
+    let U = mul(Hp, modelMat(j * .1, 0, 0, 0, a, md > 2 ? j * .25 : j < 0 && -lg || 0)), S = mul(Tq, modelMat(j * X, 1.36, 0, 0, c, e)), N = mul(U, modelMat(0, -.41, 0, 0, b));
     F = mul(S, modelMat(0, -.28, 0, 0, d));
-    let N = mul(U, modelMat(0, -.41, 0, 0, b));
     dl(['qu', S, , o], ['qa', F, , o]);
     JT.push(tp(S), tp(F), tp(F, -.3), tp(N), tp(N, -.41));
     // car drivers' legs are hidden by the body: skip their draws
@@ -582,7 +547,7 @@ person = (B, o, ph, v, md, g, lg) => {
 // swimmers lie face down at the surface (hips pivot); sunbathers (pitched) lie; people on benches sit (S); the
 // player sits down at the end of a carjack, reaches for the door before, raises the uzi while shooting
 pose = (e, sw = e.sw, p = e == ply, js = p && J && J.s > .5) =>
-  person(sw ? mul(modelMat(e.x, -.12, e.z, e.a, -1.3), modelMat(0, -.86, 0, 0)) : modelMat(e.x, e.y, e.z, e.a, e.p), e.sn, e.ph,
+  person(sw ? mul(modelMat(e.x, -.12, e.z, e.a, -1.3), HP) : modelMat(e.x, e.y, e.z, e.a, e.p), e.sn, e.ph,
     e.v || e.S || 0, sw ? 1 : js || e.S ? 2 : e.p ? 3 : 0, p && !js && (AM > 0 && !sw ? 1 : J && J.g > .2 ? 2 : 0), e.lg),
 // pose joints without drawing: run f, then drop what it queued
 quiet = (f, n = drawList.length) => { f(); drawList.length = n; },
@@ -621,7 +586,7 @@ updRag = (R, k, p, i, it, a, b, l, n, j, s) => {
       // middle joint along the body's Z
       let T = frm(R);
       for (j of [0, 5]) for (s of [1, -1]) {
-        let r = R[s > 0 ? 0 : j + 2], m = R[j + 4 + s], q = dot(cross(sub(m, r), sub(R[j + 5 + s], m)), T);
+        let m = R[j + 4 + s], q = dot(cross(sub(m, R[s > 0 ? 0 : j + 2]), sub(R[j + 5 + s], m)), T);
         if (s * q < 0) for (i = 0; i < 3; i++) m[i] -= T[i + 8] * q;
       }
     }
@@ -664,7 +629,7 @@ skin = b => rnd() < .8 ? (b ? '1356' : '2782')[rnd() * 4 | 0] : '12356789'[rnd()
 hs = (a, b) => abs(sin(a * 127.1 + b * 311.7) * 4e4) % 1,
 RX = i => i % 2 == 0 && i > 0, RZ = j => j % 2 == 0,
 // the 14 m cell centered at x, z lies fully outside the city rect
-oc = (x, z) => x > 397 || z > 397 || z < -119,
+oc = (x, z) => x > 397 || z > 397 || -119 > z,
 // cell content: 0, or the obstacle [width, depth, height, x, z, kind] (kind 0 tree, 1 house, 3 fence)
 cel = (gx, gz, i = fl(gx / 9), j = fl(gz / 9), c = gx - i * 9 - 4, d = gz - j * 9 - 4, x = gx * 14 - 50, z = gz * 14 - 50, h = hs(gx, gz)) =>
   x > 9 && oc(x, z) && !(!c && RX(i) || !d && RZ(j)) && ((RX(i) && RZ(j) && hs(i, j) < .4 && c * c + d * d < 9 ? h < .6 : h < .03) ? [8, 7, 6, x, z, 1]
@@ -699,92 +664,13 @@ mkC = (i, j, A = [], gx, gz, a, s) => {
 },
 // ===== RENDERER (raw WebGL inside a Phaser Extern) =====
 VY = 'varying vec4 C;varying vec3 N,W;',
-CG, CH, prog, uV, uM, uF, uE, uG, uO, TX, meshes = {}, VM = [];
-(() => {
-for (let i = 0; i < 6; i++) lathe(PALM, RR(0, .3 - i * .03, 1.25, .27 - i * .03), TL(12, gy(1), .1), 6, i * i * .05, i * 1.2, 0);
-for (let j = 0; j < 7; j++) {
-  let c = cos(j * .9), s = sin(j * .9), F = (d, y, w) => [[1.25 + c * d - s * w, 7.2 + y, s * d + c * w], [1.25 + c * d + s * w, 7.2 + y, s * d - c * w]];
-  // one leaf tile per frond (double-sided, transparent texels discarded), its diagonal along the frond:
-  // base (u 0, v 1), sides at mid length bent up, tip (1, 0) drooping
-  let [b] = F(0, 0, 0), [l, r] = F(1.8, .35, 1.8), [t] = F(3.6, -.8, 0), L = (u, v) => [208.5 + u * 15, 32.5 + v * 15, 0, -1];
-  for (let y of [-99, 99]) tri(PALM, b, l, r, L(0, 1), L(0, 0), L(1, 1), [0, y, 0]), tri(PALM, t, r, l, L(1, 0), L(1, 1), L(0, 0), [0, y, 0]);
-}
-for (let j = 0; j < 3; j++) lathe(PALM, el(.15, .16), [.35, .25, .12], 5, 1.25 + cos(j * 2) * .25, 6.95, sin(j * 2) * .25);
-// street lamp (arm toward +Z over the road): tapered pole, arm curving in 3 segments, head with a bright lens
-let SEG = [], GR = TL(19, gy(.7));
-lathe(LAMP, RR(0, .12, 5.6, .07), GR, 6);
-box(SEG, 0, -.04, .35, .08, .08, .7, GR);
-let ay = 5.5, az = 0;
-for (let p of [1.2, .6, .1]) put(LAMP, SEG, modelMat(0, ay, az, 0, p)), ay += sin(p) * .7, az += cos(p) * .7;
-lathe(LAMP, RR(-.3, .3, .05, .1), GR, 6, 0, ay, az);
-box(LAMP, 0, ay - .32, az, .36, .04, .36, [1, .95, .75]);
-// park bench: seat, backrest, two legs
-bl(BENCH, "JJyLJzgRyOJJyY4zgyJPKx=JJRyLyJKydJJRyLyJ", WD, DK);
-})(); // seat [0 .42 0 1.6 .08 .45], back [0 .55 -.22 1.6 .4 .06], legs [+-.65 0 0 .08 .42 .4]
-// traffic lights l0 (green) l1 (yellow) l2 (red): pole + housing + one lit lamp, facing +Z
-[[.1, .9, .2], [1, .75, 0], [1, .1, .1]].map((c, i) => {
-  let A = MODELS['l' + i] = [];
-  lathe(A, RR(0, .1, 3.4, .07), gy(.3), 6);
-  lathe(A, NS("|Nd^^}ud^^"), gy(.1)); // [3.2 .25 .19 .19 4.5 .25 .19 .19] // octagonal (beveled) housing
-  box(A, 0, 3.32 + i * .38, .18, .28, .28, .06, c);
-});
-// small high-wing plane, origin at the fuselage center (wheels touch y = -1.2), textured from its atlas cell
-// (dev/skins/plane_32.png, CAR_GUIDE "Plane atlas"; codes: 2 fuselage top, 3 belly, 6 wing bottom, 7 tail fin,
-// 8 stabilizer, 9 (+32 glass) cockpit glass, 10 cowling, 11 propeller, 12 hub, 13 tire, 14 interior, 15 windsock,
-// 19 fuselage side, 20 wing top)
-(() => {
-let AV = MODELS.av = [];
-// fuselage side profile (starts at the windshield foot, the only concave corner, so the side fan stays inside):
-// windshield, roof, tail top, tail end, belly, chin, nose (z, y, half width, strip code)
-// [19, 2.5 .55 .55 41, 1.6 1.05 .5 2, -.4 1.05 .45 2, -3.3 .4 .1 3, -3.3 .05 .1 3, -.8 -.55 .55 3, 2.2 -.55 .58 10, 3.25 -.25 .42 10, 3.3 .35 .42 10]
-ext(AV, "^{eyYyYyKzgz.yTL z.yOLuHyJTMuHOTMx-xGyYM{FxGy]T|S1yLT|XnyLT");
-bx(AV, 0, 1.05, .9, 10, .14, 1.6, 6, 6, 6, 20, 6, 6); // wing on the roof
-// tail fin [0 .35 -2.85 .1 1.3 1], stabilizer [0 .2 -2.9 3.2 .08 .9], cabin interior [0 -.1 1.3 .5 1 1.4] (small: the fuselage narrows toward the tail, a bigger box shows through) (seen through
-// the glass), wheels [+-.9 -1.2 .6 .22 .6 .6], nose wheel [0 -1.2 2.6 .18 .5 .5] (hub on the sides, tire elsewhere),
-// spinner [0 -.12 3.3 .36 .36 .4];
-// then the propeller pp: two crossed bars [0 -1.1 0 .16 2.2 .06] [0 -.08 0 2.2 .16 .06], spun with the roll angle
-let WC = [12, 12, 13, 13, 13, 13];
-NC("JnuvTzHz)J_uq|NRy}J@zHyTz)zRy}wcy_ay_y_x#wcy_ay_y_Jwc{o]yTyTJ>|XooyJJwmJZ{FPJBJ{FZP", 6).map((b, i) => bx(i > 6 ? (MODELS.pp = []) : AV, ...b, ...[[7], [8], [14], WC, WC, WC, [10], [11], [11]][i]));
-// windsock (red / white bands, the plane atlas' spare cell; along +Y, laid forward when drawn) and the tower radar
-// (post + dish panel, tilted when drawn)
-lathe(MODELS.ws = [], RR(0, .3, 2, .12), all(RC(15)), 6);
-bl(MODELS.rd = [], "JJJJ_yi_KJyTT{ZyiT", DK, gy(.8)); // post [0 0 0 .2 .7 .2], dish [0 .5 .1 2.4 .7 .1]
-// explosion debris (orange / gray)
-box(MODELS.xo = [], 0, -1, 0, 2, 2, 2, [1, .55, .1]);
-box(MODELS.xg = [], 0, -.6, 0, 1.2, 1.2, 1.2, gy(.3));
-// particles: unit boxes centered on the origin, scaled per draw (f0 smoke, f1 fire, f2 spark, f3 flash)
-[gy(.4), [1, .45, .1], [1, .8, .2], [1, 1, .8]].map((c, i) => box(MODELS['f' + i] = [], 0, -.5, 0, 1, 1, 1, c));
-box(MODELS.tr = [], 0, -.03, .5, .06, .06, 1, [1, .9, .5]);
-box(MODELS.wk = [], 0, 0, 0, 1, 0, 1, [.95, .97, 1]); // boat wake (flat, top face only)
-// motorbike (+Z forward, ~1.9 m), bike regions: 0 tank 1 seat 2 frame 3 fork 4 front 5 rear 8 engine 9 exhaust
-// 10 handlebar 11 fairing 12 under. Wheels are drawn apart (wm).
-
-// engine [0 .2 .05 .26 .3 .45], frame [0 .38 0 .14 .2 1.1], tank [0 .58 .25 .3 .22 .5], fairing [0 .48 .62 .36 .38 .16],
-// seat [0 .66 -.32 .26 .1 .6], tail [0 .6 -.72 .2 .16 .22], fork [0 .3 .66 .07 .55 .07], bar [0 .9 .5 .72 .06 .06], exhaust [.17 .14 -.4 .09 .09 .6]
-// Allocate once so each body part appends to the same mesh.
-let mo = MODELS.mo = [];
-NC("J_OeiyOJqJX_z4Jy]diayTJyRyaoqZJye)eTy_Jy_x6_ZaJiyeQyYQJy}yTykPP[X SSy_", 6).map((b, i) => bx(mo, ...b, ...[[8], [2], [0], [11, 11, 12, 11, 11, 4], [1], [2, 2, 12, 1, 5, 2], [3], [10], [9]][i]));
-// speedboat (~4.4 m): hull, pointed bow (two narrowing boxes), stripe, windshield, seat, outboard motor
-let bo = MODELS.bo = [];
-// hull: lathe laid forward, pointed bow, flat transom; blue bottom = the same rings a bit wider, flat on top
-let BR = NS("vjy}yYdxLz yYdz>yiyTa{UOTT"), HT = []; // [-2.05 .9 .55 .25 -.5 .92 .55 .25 1.2 .7 .5 .22 2.35 .05 .1 .1]
-lathe(HT, BR, WT);
-lathe(HT, BR.map((v, i) => i % 4 > 2 ? .02 : i % 4 ? v * 1.04 : v), [.15, .35, .6]);
-put(bo, HT, modelMat(0, .55, -.1, 0, -H2));
-bl(bo, "JJynyTzRyORKJynx8y}iyTLJ_v`nz)n", [.18, .22, .28, 2], [.5, .35, .25], DK); // windshield [0 .75 .5 1.4 .45 .08], seat [0 .75 -.7 .9 .3 .5], motor [0 .2 -2.15 .35 1 .35]
-// burnt wrecks: every vehicle model darkened (rgb and the glass flag x.15: glass becomes opaque black)
-// textured vertices (a < 0) become flat near-black
-for (let n of 'sd pc cv bu mo wc wb wm bo'.split(' ')) MODELS[n + 'w'] = MODELS[n].map((v, i, a, j = i % 10) => j > 2 && j < 7 ? a[i - j + 6] < 0 ? j < 6 ? .07 : 0 : v * .15 : v);
-// uzi in forearm space (pivot at the elbow): hangs along -Y from the hand (points forward when the arm is raised), magazine toward -Z
-box(MODELS.uz = [], 0, -.42, 0, .06, .2, .085, DK); // held in the hand (forearm ends ~-.3)
-bl(MODELS.uz, "JJxMJMRMJJ'ANOV", DK);
-})(); // [0 -.49 0 .03 .08 .03] [0 -.34 -.09 .04 .05 .12]
+CG, CH, prog, uV, uM, uF, uE, uG, uO, TX, meshes = {}, VM = [],
 // Atlas PNG 480x48: cells 0 player, 1..9 pedestrians (9: officer), 10 car1 (teal sedan), 11 car2 (red convertible),
 // 12 bus, 13 bike, 14 plane (dev/skins/plane_32.png; copied to 36..39 with recolored paint); row y 32..48: the 20 env tiles of dev/ENV_GUIDE.md in one strip (tile t at x = 16 t; the
 // PALMA hoja background keyed to alpha 0 offline). On load it is copied into the canvas CV (1280x48) that adds 14: police (car1 repainted white
 // and navy) and 15..35: car1, car2, bike with the paint recolored (7 colors each). TX: the GPU texture of CV
 // (until then everything textured renders black).
-let IMG = new Image(),
+IMG = new Image(),
 CV,
 gp = k => gl.getParameter(k),
 // run f with TX bound on texture unit 0, restoring Phaser's active unit and binding afterwards
@@ -795,13 +681,12 @@ withTex = (f, a = gp(34016), b = (gl.activeTexture(33984), gp(32873))) => {
 upTex = () => {
   if (!gl || !CV) return;
   TX = gl.createTexture();
-  withTex(() => {
-    // no flip / premultiply (Phaser changes them), NEAREST, CLAMP_TO_EDGE, no mipmaps
-    let S = [37440, 37441], v = S.map(gp);
+  // no flip / premultiply (Phaser changes them), NEAREST, CLAMP_TO_EDGE, no mipmaps
+  withTex((S = [37440, 37441], v = S.map(gp), q) => {
     S.map(k => gl.pixelStorei(k, 0));
     gl.texImage2D(3553, 0, 6408, 6408, 5121, CV);
     S.map((k, i) => gl.pixelStorei(k, v[i]));
-    for (let q of [10240, 10241, 10242, 10243]) gl.texParameteri(3553, q, q < 10242 ? 9728 : 33071);
+    for (q of [10240, 10241, 10242, 10243]) gl.texParameteri(3553, q, q < 10242 ? 9728 : 33071);
   });
 },
 mkMesh = (a, b = gl.createBuffer()) => (gl.bindBuffer(34962, b), gl.bufferData(34962, new Float32Array(a), 35044), [b, a.length / 10]),
@@ -819,51 +704,17 @@ initGL = (g, t, s, i, k) => {
   if (!CG) {
     CG = {};
     for (i = 0; i < CITY.length; i += 30) {
-      let t = CITY.slice(i, i + 30), X = [t[0], t[10], t[20]], Z = [t[2], t[12], t[22]];
+      t = CITY.slice(i, i + 30); let X = [t[0], t[10], t[20]], Z = [t[2], t[12], t[22]];
       (CG[max(...X) - min(...X) > 50 || max(...Z) - min(...Z) > 50 ? 0 : (X[0] + 500) / 84 << 5 | (Z[0] + 500) / 84] ||= []).push(...t);
     }
   }
-  CH = Object.values(CG).map(a => {
-    let L = [0, 1, 2].map(j => a.filter((v, i) => i % 10 == j)), lo = L.map(v => min(...v)), hi = L.map(v => max(...v));
-    return [...mkMesh(a), lo.map((v, j) => (v + hi[j]) / 2), hyp(...lo.map((v, j) => hi[j] - v)) / 2];
-  });
+  CH = Object.values(CG).map((a, _, __, L = [0, 1, 2].map(j => a.filter((v, i) => i % 10 == j)), lo = L.map(v => min(...v)), hi = L.map(v => max(...v))) =>
+    [...mkMesh(a), lo.map((v, j) => (v + hi[j]) / 2), hyp(...lo.map((v, j) => hi[j] - v)) / 2]);
   for (k in MODELS) meshes[k] = mkMesh(MODELS[k]);
   OC = {};
   upTex();
-};
-IMG.onload = () => {
-  let c = new OffscreenCanvas(1280, 48), x = c.getContext('2d');
-  x.drawImage(IMG, 0, 0);
-  // copy cell s to cell n, paint pixels (teal or red families, not the 217-red tail lights) become f(u, v) scaled by
-  // the pixel's brightness (keeps the shading)
-  // (P: which pixels are paint, from r, g, b and the row v; default: the car paint test)
-  let rc = (n, s, f, P = (r, g) => (g > r + 25 || r > g + 70) && r != 217, i) => {
-    let d = x.getImageData(s * 32, 0, 32, 32), p = d.data;
-    for (i = 0; i < 4096; i += 4) {
-      let r = p[i], g = p[i + 1], b = p[i + 2], l = (r + g + b) / 300;
-      if (P(r, g, b, i >> 7)) f(i / 4 % 32, i >> 7).map((c, j) => p[i + j] = c * l);
-    }
-    x.putImageData(d, n * 32, 0);
-  };
-  // red, white, black, yellow, blue, green, silver
-  let CC = [[200, 35, 35], [240, 240, 235], [40, 42, 48], [235, 190, 40], [40, 80, 185], [45, 130, 70], [165, 170, 175]];
-  // planes (the PNG's cell 14, before the police car takes it): cells 36..39, the light gray paint (fuselage,
-  // wings, tail; rows above 24) recolored red, white, black, yellow (colors / 2.3: the paint is bright)
-  CC.slice(0, 4).map((c, k) => rc(36 + k, 14, () => c.map(v => v / 2.3), (r, g, b, v) => abs(r - b) < 20 && g > 140 && v < 24));
-  // police: navy roof and lower body sides, white elsewhere
-  rc(14, 10, (u, v) => v < 8 && (u > 15 && u < 24 || u < 8 && v > 3) ? [30, 40, 90] : [240, 240, 235]);
-  [10, 11, 13].map((s, j) => CC.map((c, k) => rc(15 + j * 7 + k, s, () => c)));
-  CV = c; upTex();
-};
-// the atlas PNG (3250 bytes, 75 colors: near-identical shades merged offline) as one big base-92 number: printable ASCII minus the double quote, slash and backslash
-// (denser than base64); decoded to bytes with BigInt, then handed to the image as base64
-{
-  let n = 0n, s = '';
-  for (let c of "'Rc?LsA|9^3yAVJk^o0ajl[a7z m+2LPLGw-TK0IGFHhZ,Db?PhC'Sy|V]&rq&,<G6iT^02H<K_|10nZzE7SZsOe9E2I(;1Ukr;*Z7C. uiS1LlLjb!Kggxbzk+Th#$;22w1N*y,KvpCd3?Mf[nqf(^p60Id:~pu&R.<SnRJ3Rr<$+38Q~7W2FpZ,%u;2F`4&fI?#kN6&)`LJ.!urf##M4,STF:RY'T(AUr04*#~_rp)%gSpOp_dRQY)PQ} *!v1>9d[#}|a=|qqh`~((##_^Z^qff|c%aPvZF#q(Y.<'&XK?sX&5C*b%J#;KT1IKfeY[U`KP##h<!?CnT;d<;kq7[feskOTVw*P.I=+F>GCm`[1E^TT%AJEJwCexi1f[|{E&3]c})_uF9G69z_3=Y;)o]kcA>O4XLJd3A{jP&Cz+D7Aa}t;L!lm%9jy6cyT0az=3i$[J[:) g#::jW{b=.jz6,wMZdx-C}H*@?@A$MAVWc u'GDHR&M4Hd3Il[jCalh'UTyJ~4GMa`Mz#,*q]A^q?]Xv$a-%Q]PvBRpM*`Q:dc*2A>~v1v5)K,ngTE(Ur_Q6]W2<<q?X%tu_pRL9;RWWHmdR56+,3RQHw$w-hfUD::Cz^w'iqI6L0$tNk?Oo!Sfq!<^HCq=1e;IL|l0^;PP{u)&nvW$g1.Z|<^F.(pi~e~%xSAEEPQ+&`l+z7kwd*{~2Tp[$3I5 :L*h_Lre{Zfyk=^u6gno}}bMq,$w9KT7^Zj2x9DWlF:I#xRuY?E7:WCHS>L*h?exF)F1TZ[nD0bX&gD-H$,&;12:9%^M.Pxi#v~>H%y77r~:UTH6Ap<Gm}KA<j<y+&C0q*&)Xb8vuj~,kY`xyE$n){pF0;|M^7nQt(<(1CTxS:-a*xT5T7_naAL!`ciU3asS[:.G?#gL).#{zD9c<4xNMUg|aRjEX96eBQjg0!pnV*4o.lxif5&jMndAz_d)r(HzWs3{[~tD1u4bLDDYM;=bLh]VJV4tQU!#ZB{@8#Qpq6&<cbu|bW}rV?P83,+~LgJcgqBTzl; c3K|H5piC{hK<ChQhQ&A6SAnHboAH;ZzS:bl}O3N8c<9BH{8rvCA'%sG9KtHdZG1~}d+?9Byh_~py+M7$*fU}FeU)6db:30TGYy4vzKS[mx@2zFhcgiBOo-{8sQ0pq,y&o%w6%<gvg%F?Gw)I1)Qz{#3nto:<dNo#DlwH:f{' 9;>Rzdy6]khi0 ]M'QKz['L <@rE4Naje[*^HS<jCDj8y@Dna0yi!6MLe~La@_7XKQcv1nTXz-1Su%N%(c0C:#,M;&,24^iw[P6|`cc8L1xVEyUXMV)'7K~lj4_.$8;?B_^g#Uht%-0Ec*)yNU[Nd+dl-tigLowgYigD{4]f(qFp8T%5(3R@8CE~-m,IE-Etcg9(oYe+?HP-A%Ral'??N`+p>e=2V5BFizRs&Ey5Z}n9j=_K>w*#0o6@r(Aw&:UHpCqC8)WR,W%zvZxB+~#x&Fu@GAON$+8~$a>iB$MMsZi)EzW_bE?M;yaDU72XOi:%DIcQitdF-U|rkJ`<g1r~1]6]T3o#?${>P#N?_u;P,bx2`Kg[,GLF[ d^nE]Qib8= e:WS[|$$HZ`*:Eq?NE+-?o*eU)RXcseq*dBcJC'iA3*inPQS^rm+9!saZlyB>bj`v}a.?Cw3*qhEu9(ML* r}q6>CP=x@_ZkcW8LL|NmS=ng_%J ;)DF$9s[([u+Sr Z+c7hm%2*fns3E2mJA MHTmg& z1o1AFvkC&`@,V~CM2l'GR{4)>T'Vh5cI}g~*,'n)^`^64jSVQ(rEiy3nNKC=H0b&zV(znfB:|wli)<h]4m]Xm^GbM3@{Fjdh5#>E9sIQpdbiGj,J)TEOO[^_kY9-$b@ISOvr,W(P:LAkaLlYB0yNAkrIEXi5?@ t5WlTI0$9h$+-EBW.`Eu:5)GelAgj(F8JKt}=d:A&F+>5>''CzH!o=t+t,N)0_@1E^xiJw8y<|8Ea{362$w!9`v_?HeUJnBem0)D0A0,H=RavBi}qo=@r7+0.7Wn0P`-Jl]qv#t}fsf.-5<<3d%>,6S<-tTtAg_1xr$aaUPy3{N0`v5pU+4l{'.+wi'@9V6qT:^zqr>HN@(+Uw9uvd,8{lsjH_z<.<v+2=tc]!e+dq7y.Jb.Kvnw4hWu=NXEYXRfm@zQtz.ND@lkquw>?Yf1$+q|+ojO_kMLUr{D_Ba3.$Vq?y)R4ORQCj?JVqq!7$P`yj=7TC(=`#;OB?o'9y8*oNK!n~>Jzi=G,fVR3xE0RT>}xv.1|HNzhukIVg}atw2soQVH?]B~CALaZ)J9i_zR)1KlzLPi]2RjfmXNpz7Ao&]%.VM(<5PkUe+S9YfGb[AgI(Y|WFiD]|j)a1,>(z>(H1bjnA6kEUR:&{Ep%g^[|4d{^aW]_r|6e2H2%PxyGV7`1hb8>Ya~N[x[ba+uO'GS-yuWXB W,-Hx6 JDs5?4I <3ollsy~h QC)Ih(A&B;Oz&)|_w];I6OInQ$PH`NbfTg]5|.EmMGK-hvk[(.<M{ ]v_# %VzJqjhHHM&IQIlr,?vj&1o?pZ_Ig*ykE^2+r;5'aPIPtN?3KiHF0?A8gY7R,Mc(qa7)jGg3ME`ab1_SA.gzX>C]%BP^HdPucN[+{Ck z$A}GE3+`OQ+?o9$t|w_z@T4UPIjh~l=^;`*[u$[|x!?J>;W_x&-Dx,jsxOR;|?>a_]67;n5J1Y+6hg?2re|kk8NSRR%Q@xQiv'E>A3[Sg&h!CefZ1bRJS,BzX:Z1HlrXVb.L~;=^v u;y|Qr6Zp)E'l38>AQy%bW@dfCU&.I<Z+EYeLAcxCzKdzw8xW13R$Pe)%){A'?JPit^2?|@,5d[Us7TGo}S,$;br~v2_=x53d86VUZ!Kq~KR7JB1ITj 5R|[YuF_``MpO^t?4qSE,4h$2^m6g<,P P(O[}.oTP(^0JJQ6_JyDvjZh*;R@(>Y[)[uy]J&@{B7nBg'K~YTH[6SZ3=_Hno mOu-Muqi&:m@&1wlY=yoqz#|#sg2lt!IErB'vrnmd;f(4;v _YWlUIfH}C}2hW!1'!p^(M2PO{-|:iHe>j@#FM %GB`<<UC*8!ZA;~x3e|o:4B^ZlLgf(y]~w:=Y8.}otL[@7|.|083tPB5:O^TdSC!gm_Y6({P)rc#'.6EQn>G)eX{qn}:}Uqq2pH38Xp?}w:Og$l@T!tXjfLxCWy&^e RSHsAVbEMFT'MsBNyo@0Nsh@MDD(^+W9hx8-2%TEa~PQ$+*97&)rSwi6.Zk35dM&7:UY%w&Gt4BJf0<62qB@J[F.NsvK@WOS?5HT],EBRQxc=@3KI!'l#(P*(~F0O~puJ-R9xA7U)SdGjwo.k%^FKpKED|c+:|rsc`qsK?4G@, ;(t`>;S^ES$:<}kqY HL*Evor9Wae(_)(s#YCDG-;E8hNGyaWdz|_L{g?'9[ySf]PGyy9!_**kibJr4Jh2`ysi5.GiwL^[n8`5ZQ.Zzf=R*0g#89bJN[bI]vb!P%7`:?StAGGr*^n%'Ry{KDZbE5f)cH_Hc)54jTqxm`Q+0BG8,~Ixk_~n8KiliY;SY0{c@=])L?VIHZ!hcx@klgU5J+^+Us96!iWTkxH|4dV(V*D5*cu%ZCIvrSq'1+M.D3,5TzM_:i<5#zdrw[x5<LA dt8]jPdH(G4cX2(L g006#ejNS=*N*fO]h4^.C~dmI;715`o8'HyZhe}Ev8N<@1DcEY|H^1l$hqUF%@?*QcV>KGZLw@B<mk`zDni({%wjWZ?WrG3-AjTHVS(V2,xHP;{fq6pjLid;y[Z)R| QVYAsG1x;+v[`ff-LkbfpjOW,.gqyU@OFYseStW|[Z:q?,;N3Y_t[bvyPLYep`7JG*4BSGN7`F:2gq,Yd0y'X7jC'$,c6q~JXHzH*szu{h%~Zw(z4StUCfACx_Kxn{:'w{E}@^JB%!UF+8N`;R`TOh[eMxIK*ix5a<!~zab~xyubOckv'AWi6|$ze`ATJ|LA|z$a") n = n * 92n + BigInt(ci(c));
-  for (let i = 3250; i--; n >>= 8n) s = String.fromCharCode(Number(n & 255n)) + s;
-  IMG.src = 'data:image/png;base64,' + btoa(s);
-}
-let // o: skin index (atlas cell) for textured people
+},
+// o: skin index (atlas cell) for textured people
 drawMesh = (ms, m, o) => {
   gl.bindBuffer(34962, ms[0]);
   [3, 4, 3].map((n, a) => gl.vertexAttribPointer(a, n, 5126, 0, 40, a * 12 + (a > 1) * 4));
@@ -879,8 +730,8 @@ drawList,
 // aD drive bus: asymmetric tanh clip (even + odd harmonics) -> aO, and in parallel -> street reverb (0.9 s decaying
 // noise impulse, 30 % send). The lab's bitcrush (dirt) bus is cut for size.
 // Loops: aE engine, aK skid, aS siren, aR scrape. aG gear, aT last throttle, aU throttle cut end time.
-aO, aD, aZ, aV = 0, aE, aG, aT, aU, aK, aS, aR, aQ;
-let WV = 'sine square sawtooth triangle'.split(' '), FQ = 'frequency',
+aO, aD, aZ, aV = 0, aE, aG, aT, aU, aK, aS, aR, aQ,
+WV = 'sine square sawtooth triangle'.split(' '), FQ = 'frequency',
 aNow = () => AC.currentTime,
 // p jumps to a at time t, then glides exponentially to b at time e
 aRamp = (p, a, b, t, e) => (p.setValueAtTime(a, t), p.exponentialRampToValueAtTime(b, e)),
@@ -914,11 +765,11 @@ aLp = (w, t, q, c, ...x) => {
   let s = aSrc(w), f = aFlt(t, q, c), g = aGn(), n = aPan(0);
   aCh(s, ...x, f, g, n); s.start();
   return [s[FQ], f[FQ], g.gain, n.pan];
-};
+},
 // engine presets (SX-packed, quantized): [wave, Hz idle, Hz span, sub (half order) mix, exhaust noise mix,
 // noise band (x firing Hz), gears (1 = none), cutoff base, +cutoff*rpm, volume, drive, firing jitter, -,
 // +cutoff*throttle, -, intake]: 0 car (lumpy 4 cyl, rasp), 1 motorbike (harsh), 2 boat outboard (2-stroke), 3 prop plane (buzz)
-let // overrun pops / backfire: n short band-passed noise cracks
+// overrun pops / backfire: n short band-passed noise cracks
 aPops = (n, v) => play([...Array(n)].map((_, i) => [0, , , .05, 1, i * .07 + rnd() * .05, 2, 400 + rnd() * 1500, 200, 2]), v, 0, .4, 1),
 // once per frame (only with AC): e preset, v speed 0..1, th throttle 0..1, on 0 mutes (on foot, game over)
 engine = (e, v, th, on, [w, h0, hs, sm, nm, nb, G, c0, cr, vol, dr, jt, , ct, , it] = SX(`$$?WYd&D[CiB!Y![ $*FP^i'MbBn?!_!_ #(=S]a"FVAk@!R!W $-3U]l"KUBg:!U!W`)[e]) => {
@@ -951,18 +802,16 @@ engine = (e, v, th, on, [w, h0, hs, sm, nm, nb, G, c0, cr, vol, dr, jt, , ct, , 
   if (V && aT - th > .5 && r > .4) aPops(3 + rnd() * 5 | 0, V * 1.3);
   else if (V && th < .1 && r > .4 && rnd() < .06) aPops(1, V);
   aT = th;
-};
+},
 // crash: sub thud, low-mid body, clipped crunch, 4 inharmonic metal resonances, debris (x 1)
-let S_CRASH = SX('"2&P^!!D !IIO[!!K8 !IIO^!#[MW !IIWl!#KK{ !IIUk!#VVy !IIRi!#_^x !IIOg6#ccy !IIRO@"b'),
+S_CRASH = SX('"2&P^!!D !IIO[!!K8 !IIO^!#[MW !IIWl!#KK{ !IIUk!#VVy !IIRi!#_^x !IIOg6#ccy !IIRO@"b'),
 // explosion: sub drop, distorted low boom, blast crack, 4 s rumble, 10 debris rattles (drive + reverb)
-bang = (v = 1, p) => play([...SX('"5"]_!!H !II[^!!R/ !IITZ!!iD !IIgY?!@-ZI'), ...[...Array(10)].map(() => [0, , , .05, .4, .2 + rnd() * 1.6, 2, 600 + rnd() * 3e3, 500, 4])], v, p, .2, 1);
-let S_SPLASH = SX('!IIXY!!g? !IIOW!#RD[ "GWBO@ "K[?LG "ETCKL'),
+bang = (v = 1, p) => play([...SX('"5"]_!!H !II[^!!R/ !IITZ!!iD !IIgY?!@-ZI'), ...[...Array(10)].map(() => [0, , , .05, .4, .2 + rnd() * 1.6, 2, 600 + rnd() * 3e3, 500, 4])], v, p, .2, 1),
+S_SPLASH = SX('!IIXY!!g? !IIOW!#RD[ "GWBO@ "K[?LG "ETCKL'),
 // car horn: two detuned squares (~400 + 500 Hz), lowpassed
 // glass (brittle): sharp high-passed crack + 14 short shards (2.5-10 kHz, 20-120 ms) over 200 ms
-glass = (v = 1, p) => play([...SX('!IICX!"io !IIKO0"m'), ...[...Array(14)].map(() => {
-  let f = 2500 + rnd() * 7500;
-  return [rnd() < .5 ? 1 : 4, f, f * .95, .02 + rnd() * .1, .09, rnd() * .2];
-})], v, p, 0),
+glass = (v = 1, p) => play([...SX('!IICX!"io !IIKO0"m'), ...[...Array(14)].map((f = 2500 + rnd() * 7500) => // (f: default for the undefined array value)
+   [rnd() < .5 ? 1 : 4, f, f * .95, .02 + rnd() * .1, .09, rnd() * .2])], v, p, 0),
 // ===== PLAYER CAR =====
 // Arcade drift model: pointing angle 'a' (where the nose points) and travel angle 't' (where it moves).
 // 't' chases 'a' at a rate set by traction; the handbrake cuts traction -> drift.
@@ -991,29 +840,35 @@ carBlocked = (x, z, a, e = car, o = { x, z, a }, w = e.w - .05, l = e.l - .05) =
   return 0;
 },
 updateCar = k => {
-  let gas = held('U'), brake = held('D'), hand = held('2'), sd, na, traction, slip, nx, nz, impact;
+  let gas = held('U'), brake = held('D'), hand = held(2), sd, na, slip, nx, nz, impact;
   // bikes (c 1): faster, quicker accel, tighter turns, big lean. Boats (c 2): low traction (slides).
   let steerIn = ax('L', 'R'), bus = car.m == 'bu', bk = car.c == 1, mx = bus ? .42 : bk ? .713 : .62;
   car.st = toward(car.st, steerIn, .1 * k);
   // accel tapers with speed (0-100 km/h: car ~1.8 s, bike ~1.2 s); strong when gassing out of a reverse roll
   if (gas) car.s += .005 * k * (car.s < 0 ? 3 : bk ? 1.3 : 1) * (1.6 - max(car.s, 0) / mx);
   if (brake) car.s -= (car.s > .01 ? .02 : .0063) * k;
-  sd = car.x < -12; // sand (west of the seaside avenue): a bit more drag, much less traction (only these two factors change)
+  sd = -12 > car.x; // sand (west of the seaside avenue): a bit more drag, much less traction (only these two factors change)
   car.s = clamp(car.s, -.2, mx) * ((hand ? .985 : gas ? .995 : .988) * (sd ? .994 : 1)) ** k;
   if (!gas && !brake && abs(car.s) < .004) car.s = 0;
-  // grip curve: traction ability by speed fraction x
-  let x = abs(car.s) / mx, dir = car.s < 0 ? -1 : 1, ability = x < .5 ? min(8 * x * x * x + x * 1.5, 1) : 1 - (x - .5) * (x - .5);
-  na = car.a + car.st * .052 * (bus ? .6 : bk ? 1.3 : 1) * ability * dir * k * (hand ? 1.35 : 1);
-  if (!carBlocked(car.x, car.z, na)) car.a = na;
-  traction = (hand ? .18 : 1) * (sd ? .3 : 1) * (car.c > 1 ? .35 : 1);
+  // bicycle model: the front wheels steer (less at speed); each axle's lateral grip (saturating at ~7 deg of slip)
+  // pushes the body sideways and turns it. Sand and water cut the grip, the handbrake lets the rear go (cars' rear
+  // is a bit looser than the front: they rotate when pushed), so drifts and spins come from the tires.
+  // f / l: forward / lateral speed in the car's frame, Y: yaw rate (car.yw), b: axle distance from the center
+  let d = car.a, b = car.l * .6, f = cos(car.t - d) * car.s, l = sin(car.t - d) * car.s, Y = car.yw || 0,
+    G = .012 * (sd ? .3 : 1) * (car.c > 1 ? .35 : 1), dl = car.st * .7 * (bus || bk ? 1.3 : 1) / (1 + abs(car.s) * 3),
+    ti = (a, g) => -clamp(a * 8, -1, 1) * g * k, Ff, Fr;
+  if (abs(car.s) < .05) Y = f * M.tan(dl) / b / 2, l *= .5 ** k; // parking speed: the wheels just roll
+  else Ff = ti(at2(l + Y * b, abs(f)) - dl * sgn(f), bk ? G * 1.08 : G), Fr = ti(at2(l - Y * b, abs(f)), G * (bk ? 1.08 : .85) * (hand ? .3 : 1)),
+    Y = (Y + (Ff - Fr) * 1.7 / car.l) * .97 ** k, l += Ff + Fr;
+  car.s = f < 0 ? -hyp(f, l) : hyp(f, l);
+  car.t = d + M.atan(l / (f || 1e-6));
+  na = d + Y * k;
+  carBlocked(car.x, car.z, na) ? Y = 0 : car.a = na;
+  car.yw = Y;
   slip = angDiff(car.t, car.a);
-  car.t += clamp(slip, -1, 1) * min(1, (.05 + .14 * abs(slip)) * traction * k * 2.2);
-  slip = angDiff(car.t, car.a);
-  if (abs(slip) > H2) car.t = car.a - sgn(slip) * H2;
-  car.s *= 1 - abs(slip) * .012 * k; // sliding scrubs speed
   car.dr = abs(car.s) > .25 && abs(slip) > .22 ? car.dr + k : 0;
-  let vx = sin(car.t) * car.s * k, vz = cos(car.t) * car.s * k, before = abs(car.s);
-  nx = car.x + vx;
+  let vz = cos(car.t) * car.s * k, before = abs(car.s);
+  nx = car.x + sin(car.t) * car.s * k;
   // SW: touching a wall this frame (scrape sound)
   if (carBlocked(nx, car.z, car.a)) car.s *= 1 - abs(sin(car.t)) * .85, SW = 1; else car.x = nx;
   nz = car.z + vz;
@@ -1032,14 +887,13 @@ updateCar = k => {
 updateCam = (k, x, y, z, yaw, speed, c = 1) => {
   cam.w += angDiff(cam.w, yaw) * min(1, .09 * k);
   let fx = sin(cam.w), fz = cos(cam.w), dist = 6.4 * c + speed * 1.6, sh;
-  let ix = x - fx * dist, iz = z - fz * dist, iy = y + 2.9 * c + speed * .5;
   let e = cam.e, l = min(1, .14 * k);
-  e[0] += (ix - e[0]) * l; e[1] += (iy - e[1]) * l; e[2] += (iz - e[2]) * l;
+  // ease toward the ideal eye (dist behind, raised)
+  e[0] += (x - fx * dist - e[0]) * l; e[1] += (y + 2.9 * c + speed * .5 - e[1]) * l; e[2] += (z - fz * dist - e[2]) * l;
   // keep a fixed horizontal distance so the camera never lags too far behind
   let dx = e[0] - x, dz = e[2] - z, dl = hyp(dx, dz) || 1;
   e[0] = x + dx / dl * dist; e[2] = z + dz / dl * dist;
-  cam.sh *= .88 ** k;
-  sh = cam.sh;
+  sh = cam.sh *= .88 ** k;
   cam.t = [x + fx * 3 * c + rs() * sh, y + 1.3 + rs() * sh, z + fz * 3 * c];
   cam.f += (1 + speed * .3 - cam.f) * min(1, .1 * k);
 },
@@ -1054,12 +908,12 @@ light = (i, j, ax) => (T / 1000 + i * 5 + j * 3 + ax * 7) % 14,
 // X): any city node, else the country roads (every 6th grid line; none through the airport or west of x = 6);
 // sg: the road segment from node i, j heading d exists
 inC = (i, j) => min(i, j) >= 0 && max(i, j) <= 9,
-rdn = (i, j, a) => inC(i, j) || (j > -1 || j < -2 || i > 9) && !((a ? j : i) % 6) && i > -a,
+rdn = (i, j, a) => inC(i, j) || (j > -1 || -2 > j || i > 9) && !((a ? j : i) % 6) && i > -a,
 sg = (i, j, d) => rdn(i, j, d & 1) && rdn(i + DX[d], j + DZ[d], d & 1),
 // Traffic car on the lane before intersection i,j heading d (right-hand: lane = road center + 3 * right).
 // pk: an empty parked car at the right curb (5.1 m from the center) mid-block, clear of the crosswalks
-spawnCar = (minD, pk, m = 'sd sd sd cv sd cv bu mo'.split(' ')[rnd() * 8 | 0]) => {
-  let d = rnd() * 4 | 0, i = (F.x / 42 | 0) + (rnd() * 5 | 0) - 2, j = (F.z / 42 | 0) + (rnd() * 5 | 0) - 2;
+spawnCar = (minD, pk, m = 'sd sd sd cv sd cv bu mo'.split(' ')[rnd() * 8 | 0], d = rnd() * 4 | 0, i = (F.x / 42 | 0) + (rnd() * 5 | 0) - 2, j = (F.z / 42 | 0) + (rnd() * 5 | 0) - 2) => {
+  
   if (!sg(i - DX[d], j - DZ[d], d)) return;
   let o = rnd() * 18 + 12, l = pk ? 5.1 : 3, x = i * 42 + 6 - DX[d] * o - DZ[d] * l, z = j * 42 + 6 - DZ[d] * o + DX[d] * l, dd = hyp(x - F.x, z - F.z);
   if (dd < minD || dd > 120 || ENT.some(e => !e.k && hyp(e.x - x, e.z - z) < 12)) return;
@@ -1077,37 +931,36 @@ corner = (e, c) => [e.A + 19.2 * sin(c * H2 + .785), e.F + 19.2 * cos(c * H2 + .
 // new pedestrian (b: beach skins) walking around the block centered at cx, cz (corner c, direction r: true (= 1) or 3)
 // (sp: speed, ~1 in 12 runs)
 mkPed = (b, cx, cz) => ({ k: 1, sn: skin(b), A: cx, F: cz, c: rnd() * 4 | 0, r: rnd() < .5 || 3, a: 0, ph: 0, sp: rnd() < .08 ? .11 : .03 }),
-populate = (dc, dp, n = 0, e) => {
-  
+populate = (dc, dp, n = 0, e, r, u, bi, bj, i, G, bs, f, x0, z0, x1, z1) => {
   for (e of ENT) n += !e.k;
   if (n < 54) spawnCar(dc, rnd() < .15); // 15% of the attempts: parked
-  if (ENT.length - n < (F.x < 60 ? 50 : 44)) F.x < 60 && rnd() < .7 ? ((minD, r = rnd(), u = UMB[rnd() * 24 | 0], e = mkPed(1, -32, F.z + rs() * 120)) => {
-  
-  if (r < .4) e.x = u[0], e.z = u[1], e.a = 0, e.p = -H2, e.I = 1;
-  else if (r < .55) e.x = -49 - rnd() * 2.5, e.z = e.F, e.I = 1;
-  else [e.x, e.z] = corner(e, e.c);
-  if (dst(e) > minD && abs(e.z - F.z) < 75) ENT.push(e);
-})(dp) : ((minD, bi = (F.x / 42 | 0) + (rnd() * 3 | 0) - 1, bj = (F.z / 42 | 0) + (rnd() * 3 | 0) - 1, i) => {
-  
-  if (min(bi, bj) < 0 || max(bi, bj) >= 9) return;
-  let e = mkPed(0, bi * 42 + 27, bj * 42 + 27), r = rnd(), G = [e], bs = BN.filter(b => abs(b[0] - e.A) + abs(b[2] - e.F) < 25);
-  let [x0, z0] = corner(e, e.c), [x1, z1] = corner(e, e.c + e.r), f = rnd();
-  e.x = x0 + (x1 - x0) * f; e.z = z0 + (z1 - z0) * f;
-  // someone sitting on a free bench of this block's park (seated pose, idle until scared), or 2-3 people chatting
-  // in a circle (idle, facing its center)
-  if (r < .2 && bs[0]) [e.x, , e.z, e.a] = bs[rnd() * bs.length | 0], e.S = .02, e.I = 1;
-  else if (r < .27) for (i = r < .24 ? 3 : 2; i--;) {
-    let o = G[i] = { ...e, sn: skin(0), I: 1, a: i * 2.1 + r * 40 };
-    [o.x, o.z] = loc(o, 0, -.6);
+  if (ENT.length - n < (F.x < 60 ? 50 : 44)) if (F.x < 60 && rnd() < .7) {
+    // beach people near the player: sunbathers on the towels, bathers standing in the shallows, walkers on the sand
+    r = rnd(); u = UMB[rnd() * 24 | 0]; e = mkPed(1, -32, F.z + rs() * 120);
+    if (r < .4) e.x = u[0], e.z = u[1], e.a = 0, e.p = -H2, e.I = 1;
+    else if (r < .55) e.x = -49 - rnd() * 2.5, e.z = e.F, e.I = 1;
+    else [e.x, e.z] = corner(e, e.c);
+    if (dst(e) > dp && abs(e.z - F.z) < 75) ENT.push(e);
+  } else if (bi = (F.x / 42 | 0) + (rnd() * 3 | 0) - 1, bj = (F.z / 42 | 0) + (rnd() * 3 | 0) - 1, min(bi, bj) >= 0 && max(bi, bj) < 9) {
+    // a pedestrian walking around block (bi, bj)
+    e = mkPed(0, bi * 42 + 27, bj * 42 + 27); r = rnd(); G = [e]; bs = BN.filter(b => abs(b[0] - e.A) + abs(b[2] - e.F) < 25);
+    [x0, z0] = corner(e, e.c); [x1, z1] = corner(e, e.c + e.r); f = rnd();
+    e.x = x0 + (x1 - x0) * f; e.z = z0 + (z1 - z0) * f;
+    // someone sitting on a free bench of this block's park (seated pose, idle until scared), or 2-3 people chatting
+    // in a circle (idle, facing its center)
+    if (r < .2 && bs[0]) [e.x, , e.z, e.a] = bs[rnd() * bs.length | 0], e.S = .02, e.I = 1;
+    else if (r < .27) for (i = r < .24 ? 3 : 2; i--;) {
+      u = G[i] = { ...e, sn: skin(0), I: 1, a: i * 2.1 + r * 40 };
+      [u.x, u.z] = loc(u, 0, -.6);
+    }
+    if (dst(e) > dp && !ENT.some(o => o.x == e.x)) ENT.push(...G);
   }
-  if (dst(e) > minD && !ENT.some(o => o.x == e.x)) ENT.push(...G);
-})(dp);
 },
-updTraffic = (e, k) => {
+updTraffic = (e, k, f, n) => {
   if (e.h > 0) { // knocked: slide and spin, then resume driving toward the lane target
     e.h -= k;
     if (!solid(e.x + e.J * k, e.z + e.K * k)) { e.x += e.J * k; e.z += e.K * k; }
-    let f = .93 ** k;
+    f = .93 ** k;
     e.J *= f; e.K *= f; e.a += e.r * k; e.r *= f; e.t = e.a; e.s = 0;
     return;
   }
@@ -1115,16 +968,16 @@ updTraffic = (e, k) => {
   if (e.dd) return updBoat(e, k); // dead driver: no steering, rolls to a stop or into whatever is ahead
   let d = e.d, o, da;
   // lane target 3 m right of the road center (left lane while overtaking a stopped car, ov frames)
-  let c = e.g ? 6 : -7, ln = (e.ov -= k) > 0 ? -3 : 3, ox = e.i * 42 + 6 + DX[d] * c - DZ[d] * ln - e.x, oz = e.j * 42 + 6 + DZ[d] * c + DX[d] * ln - e.z, dist = hyp(ox, oz);
+  let c = e.g ? 6 : -7, ln = (e.ov -= k) > 0 ? -3 : 3, ox = e.i * 42 + 6 + DX[d] * c - DZ[d] * ln - e.x, oz = e.j * 42 + 6 + DZ[d] * c + DX[d] * ln - e.z, dist = hyp(ox, oz), want = .24, hb;
   if (dist < 2) {
     if (e.g) { e.i += DX[d]; e.j += DZ[d]; e.g = 0; }
     else { // at the stop line: straight 50%, right/left 25%, only along roads; U-turn at a dead end (country)
-      let n = 0;
+      n = 0;
       do d = (e.d + (n++ > 30 ? 2 : [0, 0, 1, 3][rnd() * 4 | 0])) % 4; while (!sg(e.i, e.j, d));
       e.d = d; e.g = 1;
     }
   }
-  let want = .24, hb; // hb: held up by the player (-> honk)
+  // want: target speed; hb: held up by the player (-> honk)
   if (!e.g && inC(e.i, e.j) && light(e.i, e.j, d & 1) > 4.5) want = min(want, (dist - 4) * .04);
   // keep distance from cars ahead going the same way (and always from the player / knocked cars). A stopped
   // obstacle (empty car, wreck, dead driver) is passed on the other lane: creep while swerving around it.
@@ -1144,12 +997,12 @@ updTraffic = (e, k) => {
   if (e.c) e.rl = clamp(-da * 4, -.4, .4); // bikes lean into turns
   [e.x, e.z] = loc(e, 0, e.s * k);
 },
-updPed = (e, k) => {
+updPed = (e, k, R) => {
   // knocked down (h): 1 ragdoll (follows the pelvis, lies still once ~.5 s slow or after ~7 s), 2 lying, then
   // despawn or (e.u: player, carjacked driver) 3: get up, the joints blend from the ragdoll to a standing pose
   // facing where the head was over .6 s, then run (f) / play on
   if (e.h) {
-  let R = e.R;
+  R = e.R;
   if (e.h == 1) {
     // f: slow frames count fully, moving ones 1/12 (still after ~.5 s slow, or ~6 s in any case)
     if ((e.f += updRag(R, k) < .005 ? k : k / 12) > 30) lay(e);
@@ -1165,7 +1018,7 @@ updPed = (e, k) => {
   }
   // (seated: hips on the bench seat)
   e.y = e.S ? -.11 : pg(e.x, e.z) + (e.p ? .12 : 0);
-  let sp = e.sp, ta;
+  let sp = e.sp, ta, x, z;
   // flee sideways from a fast player car coming at us
   let rx = e.x - car.x, rz = e.z - car.z, vx = sin(car.t), vz = cos(car.t), ah = rx * vx + rz * vz;
   if (car.s > .15 && ah > 0 && ah < 16 && abs(rx * vz - rz * vx) < 5) { e.f = 40; e.Y = at2(rx - ah * vx, rz - ah * vz); }
@@ -1173,7 +1026,7 @@ updPed = (e, k) => {
   // idle: sunbather (lying, p), bather standing in the water, group, bench (S); walks on after ~1 min on average
   else if (e.I) sp = 0, ta = e.a, rnd() < 3e-4 * k && (e.p = e.I = e.S = 0);
   else {
-    let [x, z] = corner(e, e.c);
+    [x, z] = corner(e, e.c);
     ta = at2(x - e.x, z - e.z);
     // at a corner: turn it, or (every other corner, city blocks only) cross the street straight ahead to the next
     // block (u, v): wait facing the road until its cars get red (light phase 6-8 for that axis), then head for the
@@ -1186,8 +1039,8 @@ updPed = (e, k) => {
     }
   }
   e.a += angDiff(e.a, ta) * min(1, .3 * k);
-  let [nx, nz] = loc(e, 0, sp * k);
-  if (!solid(nx, nz)) e.x = nx, e.z = nz;
+  [x, z] = loc(e, 0, sp * k);
+  if (!solid(x, z)) e.x = x, e.z = z;
   else if (!e.f) e.c += e.r; // blocked (beach palms, umbrellas): head for the next corner
   e.ph += (sp * 1.2 + .035) * k; e.v = sp;
 },
@@ -1209,11 +1062,11 @@ bail = s => {
 },
 // ballistic step: velocity v*, gravity g
 fly = (o, k, g) => { o.U -= g * k; o.x += o.J * k; o.y += o.U * k; o.z += o.K * k; },
-updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d) => {
+updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d, imp, RA, B, v, R, X) => {
   // camera ground position (people / drivers culled beyond 70 m)
   populate(60, 40);
   for (n = ENT.length; n--;) {
-    let e = ENT[n];
+    e = ENT[n];
     if (e == car || e == ply) continue;
     // far away, or an abandoned car / wreck / dead driver left ~20 s that is out of view (no endless jams)
     let dd = dst(e);
@@ -1232,7 +1085,7 @@ updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d) => 
       }
     } else if (lat < o.w + (car.c ? car.w + .25 : 1.2) && lon < o.l + (car.c ? car.l + .05 : 2.2)) {
       let dl = hyp(rx, rz) || 1, nx = rx / dl * .3, nz = rz / dl * .3, vx = sin(car.t) * car.s, vz = cos(car.t) * car.s;
-      let imp = abs((vx - s * o.s) * nx + (vz - c * o.s) * nz) / .3;
+      imp = abs((vx - s * o.s) * nx + (vz - c * o.s) * nz) / .3;
       if (!carBlocked(car.x + nx, car.z + nz, car.a)) { car.x += nx; car.z += nz; }
       if (!solid(o.x - nx, o.z - nz)) { o.x -= nx; o.z -= nz; }
       if (imp > .04 && !(o.h > 30)) {
@@ -1242,19 +1095,20 @@ updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d) => 
       // the pushed car takes the player's velocity (bulldozing), and stays stunned while in contact
       o.h = max(o.h, 20); o.J = vx * .9; o.K = vz * .9; o.s = 0;
     }
+    // near miss: passing within ~.3-1.7 m of a car's side at 85+ km/h (once per car)
+    else if (!foot && !inP && !o.nm && abs(car.s) > .4 && abs(lat - o.w - car.w - 1) < .7 && lon < o.l + car.l) o.nm = 1, addMoney(40, 'CASI');
   }
   // draw entities in view (vis); people (~9 draws each) are skipped beyond 70 m from the camera (deep in the fog, a
   // few pixels tall)
   for (e of ENT) if (e.k) {
     if (dst(e, CE) > 70 || !vis(e.x, e.z)) continue;
-    let RA = e.h ? ((e, R = e.R, X = frm(R), o = e.sn, j, F) => {
-  // j: loop variable, F: returned forearm matrix
-  
-  dl([74 >> o & 1 ? 'qf' : 'q', X, , o]);
-  for (j of [0, 5]) dl(['qu', seg(R[j + 2], R[j + 3], X), , o], ['qa', F = seg(R[j + 3], R[j + 4], X), , o],
-    ['q' + 'LR'[j / 5], seg(R[0].map((v, i) => v + X[i] * (j ? -.1 : .1)), R[j + 5], X), , o], ['q' + 'ST'[j / 5], seg(R[j + 5], R[j + 6], X), , o]);
-  return F;
-})(e) : pose(e);
+    // ragdoll (h): the person meshes between its joints (X: torso frame), RA ends as the -X forearm (uzi)
+    if (e.h) {
+      R = e.R; X = frm(R); o = e.sn;
+      dl([74 >> o & 1 ? 'qf' : 'q', X, , o]);
+      for (j of [0, 5]) dl(['qu', seg(R[j + 2], R[j + 3], X), , o], ['qa', RA = seg(R[j + 3], R[j + 4], X), , o],
+        ['q' + 'LR'[j / 5], seg(R[0].map((v, i) => v + X[i] * (j ? -.1 : .1)), R[j + 5], X), , o], ['q' + 'ST'[j / 5], seg(R[j + 5], R[j + 6], X), , o]);
+    } else RA = pose(e);
     if (e == ply && !e.sw) dl(['uz', RA]);
   } else {
     let c = e.c, bu = e.l > 3;
@@ -1263,8 +1117,8 @@ updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d) => 
       e.y = -.35 + sin(T / 400 + e.x) * .07; e.p = sin(T / 530 + e.z) * .04 - abs(e.s) * .12;
       if (abs(e.s) > .08 && rnd() < .6 * k) [x, z] = loc(e, rs() * 1.5, -2.4), fx(x, -.08, z, 'wk', 1, 50);
     }
-    let B = modelMat(e.x, gh(e.x, e.z) + (e.y || 0), e.z, e.a, e.p, e.rl);
-    let v = ([['wc', .8, 1.35, -1.35, .34], ['wm', 0, .65, -.65, .3], , ['wb', 1.05, 3.3, -3.1, .5]])[bu ? 3 : c];
+    B = modelMat(e.x, gh(e.x, e.z) + (e.y || 0), e.z, e.a, e.p, e.rl);
+    v = ([['wc', .8, 1.35, -1.35, .34], ['wm', 0, .65, -.65, .3], , ['wb', 1.05, 3.3, -3.1, .5]])[bu ? 3 : c];
     if (vis(e.x, e.z)) {
     dl([e.m, B, e.sg, e.o]);
     // wheels: spin with the distance rolled (wa), the front ones steer with st
@@ -1313,16 +1167,27 @@ exitCar = () => {
 },
 // the player stands at x, z facing a (back on foot after a car, a plane or a crash)
 offFoot = () => ENT.splice(ENT.indexOf(ply), 1),
-toFoot = (x, z, a, y = 0) => { Object.assign(ply, { x, z, y, a, h: 0, p: 0 }); ENT.push(ply); foot = 1; inP = 0; },
-updFoot = (k, p = ply, o) => {
+toFoot = (x, z, a, y = 0) => { Object.assign(ply, { x, z, y, a, h: 0, p: 0, pc: 0 }); ENT.push(ply); foot = 1; inP = 0; },
+updFoot = (k, p = ply, o, sw = wet(p.x, p.z) && -50 > p.x, sp, best) => {
   
   near = 0;
   if (p.h) return updPed(p, k); // knocked down: ragdoll, lie, get up
+  // skydive (pc 1: free fall face down, 2: under the canopy): opens on B1 or by itself low, turn with L/R, drifts
+  // forward; over a roof slide to the street; landing pays (it always opens in time: by itself at 35 m)
+  if (p.pc) {
+    if (p.pc < 2 && (hit(1) || p.y < 35)) p.pc = 2;
+    p.vy = p.pc > 1 ? toward(p.vy, -.08, .02 * k) : max(p.vy - .006 * k, -.9);
+    p.p = p.pc < 2 && 1.3; p.a += ax('L', 'R') * .03 * k;
+    [p.x, p.z] = loc(p, 0, (p.pc > 1 ? .1 : .2) * k);
+    if (hg(p.x, p.z) > p.y) p.x = rou((p.x - 6) / 42) * 42 + 6;
+    if ((p.y += p.vy * k) < (sp = pg(p.x, p.z))) p.y = sp, p.pc = p.p = 0, addMoney(300, 'PARACAIDAS');
+    return;
+  }
   // tank controls: U/D walk, L/R turn, B2 run. Deep water (sw): slow swim, arm strokes, no shooting.
-  let sw = wet(p.x, p.z) && p.x < -50, sp, best;
+
   sw && !p.sw && play(S_SPLASH); // jumping into deep water
   p.sw = sw;
-  sp = (held('U') - held('D') * .6) * (p.sw ? .045 : held('2') ? .11 : .05);
+  sp = (held('U') - held('D') * .6) * (p.sw ? .045 : held(2) ? .11 : .05);
   p.a += ax('L', 'R') * .07 * k;
   let [nx, nz] = loc(p, 0, sp * k);
   if (!fs(nx, p.z)) p.x = nx;
@@ -1331,9 +1196,9 @@ updFoot = (k, p = ply, o) => {
   p.y = pg(p.x, p.z);
   // uzi: hold B3 for auto-fire (~10 shots/s); the arm stays raised a bit after releasing
   AM -= k;
-  if (held('3') && !p.sw) { AM = 30; if ((SC -= k) <= 0) SC = 6, shoot(); }
+  if (held(3) && !p.sw) { AM = 30; if ((SC -= k) <= 0) SC = 6, shoot(); }
   NP = PL.find(q => q.g && dst(p, q) < 6);
-  if (NP && hit('1')) { // board a plane: walk to the door, hop in
+  if (NP && hit(1)) { // board a plane: walk to the door, hop in
     PJ = { t: 0, x: p.x, z: p.z }; P = NP;
     if (!P.n) P.n = 1, heat(1), addMoney(1000, 'AVION');
     return;
@@ -1348,7 +1213,7 @@ updFoot = (k, p = ply, o) => {
     }
     if (gap < best && !o.wr) { best = gap; near = o; }
   }
-  if (near && hit('1')) { // start the carjack: the car stops at once and loses its AI
+  if (near && hit(1)) { // start the carjack: the car stops at once and loses its AI
     J = { o: near, t: 0, x: p.x, z: p.z, d: !near.e, g: 0 };
     heat(near.q ? 3 : J.d); // carjack: +1 star with a driver, +3 for a police car
     addMoney(near.c > 1 ? 400 : near.q ? 500 : near.l > 3 ? 300 : J.d ? 150 : 50, 'AUTO MOTO LANCHA BUS'.split(' ')[near.l > 3 ? 3 : near.c]);
@@ -1364,7 +1229,7 @@ ss = (a, b, t = J.t, u = clamp((t - a) / (b - a), 0, 1)) => u * u * (3 - 2 * u),
 updJack = (k, o = J.o, p = ply, bk = o.c == 1, d = J.d ? bk ? 16 : 30 : 0, hz = o.l - 1.5, m = bk ? 24 : 36, n = bk ? 72 : 66) => {
   
   J.t += J.X ? -k : k;
-  let [dx, dz] = bk ? loc(o, .75, -.3) : loc(o, o.w + .55, hz - 1), [sx, sz] = loc(o, bk ? 0 : .4, bk ? -.68 : hz - .9), f = ss(0, 24), f2 = ss(m + d, m + d + (bk ? 48 : 18));
+  let [dx, dz] = loc(o, bk ? .75 : o.w + .55, bk ? -.3 : hz - 1), [sx, sz] = loc(o, bk ? 0 : .4, bk ? -.68 : hz - .9), f = ss(0, 24), f2 = ss(m + d, m + d + (bk ? 48 : 18));
   p.x = J.x + (dx - J.x) * f + (sx - dx) * f2;
   p.z = J.z + (dz - J.z) * f + (sz - dz) * f2;
   p.y = gh(p.x, p.z) + f2 * (bk ? .05 : -.35); // onto the saddle / sink into the seat
@@ -1391,11 +1256,11 @@ sc = (m, a, b = a, c = a) => mul(m, [a, 0, 0, 0, 0, b, 0, 0, 0, 0, c, 0, 0, 0, 0
 // particle: position, model, size, life (frames), random speed v, upward speed vy
 fx = (x, y, z, m, s, l, v = 0, vy = 0) => FX.length < 60 && FX.push({ x, y, z, m, s, l, t: l, J: rs() * v, U: vy + rnd() * v * .5, K: rs() * v }),
 // hitscan with arcade auto-aim: nearest ped / car within 45 m in a ~25 deg cone with line of sight
-shoot = (p = ply, o, i) => {
+shoot = (p = ply, o, i, L = 45, tg, np = 0, a = p.a, dx, dz, d) => {
   
-  let L = 45, tg, np = 0, a = p.a;
+  
   for (o of ENT) if (o != p && !o.wr && !(o.k && o.h)) {
-    let dx = o.x - p.x, dz = o.z - p.z, d = hyp(dx, dz);
+    dx = o.x - p.x; dz = o.z - p.z; d = hyp(dx, dz);
     if (o.k && d < 25) np = 1;
     if (d < L && abs(angDiff(p.a, at2(dx, dz))) < .44 && los(o, d)) L = d, tg = o;
   }
@@ -1403,7 +1268,7 @@ shoot = (p = ply, o, i) => {
   a += rs() * .04; // spread
   if (!tg) for (L = 1; L < 45 && !solid(p.x + sin(a) * L, p.z + cos(a) * L); L++);
   let [mx, mz] = loc(p, -.3, 1.1), my = p.y + 1.35, hx = p.x + sin(a) * L, hz = p.z + cos(a) * L, hy = tg ? tg.k ? tg.y + 1.1 : 1 : my;
-  let dx = hx - mx, dz = hz - mz, hl = hyp(dx, dz);
+  dx = hx - mx; dz = hz - mz; let hl = hyp(dx, dz);
   TR = { x: mx, y: my, z: mz, a: at2(dx, dz), p: at2(hy - my, hl), l: hyp(hl, hy - my), t: 3 };
   fx(mx, my, mz, 'f3', .5, 2);
   for (i = 3; i--;) fx(hx, hy, hz, 'f2', .15, 10, .15, .02);
@@ -1444,12 +1309,9 @@ explode = (e, q = e.q, i, o) => {
 H, L, BT = 0, SEEN,
 // line of sight: march the collision grid from cop e to the player in 2 m steps (d = distance)
 los = (e, d, s) => { for (s = 2; s < d; s += 2) if (solid(e.x + (F.x - e.x) * s / d, e.z + (F.z - e.z) * s / d)) return 0; return 1; },
-updCop = (e, k) => {
+// (ld: aim a bit ahead of a moving player car)
+updCop = (e, k, dx = F.x - e.x, dz = F.z - e.z, d = hyp(dx, dz), rx = e.x % 42 < 12, rz = e.z % 42 < 12, ld = foot ? 0 : car.s * 25, tx = F.x + sin(car.t) * ld, tz = F.z + cos(car.t) * ld) => {
   if (e.h > 0 || e.e || e.dd) return updTraffic(e, k); // knocked (slide), parked or driver shot
-  let dx = F.x - e.x, dz = F.z - e.z, d = hyp(dx, dz), rx = e.x % 42 < 12, rz = e.z % 42 < 12;
-  // aim a bit ahead of a moving player car
-  let ld = foot ? 0 : car.s * 25;
-  let tx = F.x + sin(car.t) * ld, tz = F.z + cos(car.t) * ld;
   e.v = d < 80 && !(F.y > 40) && los(e, d);
   if (!(d < 30 || e.v) && (rx || rz)) {
     // far: Manhattan routing. On a road go to the next intersection toward the player;
@@ -1460,11 +1322,10 @@ updCop = (e, k) => {
   }
   // the sea is off limits: with the player out in the water, drive up to the shoreline (x -44) or the
   // routing target and wait there
-  let sea = F.x < -44;
   tx = max(tx, -44);
   let aim = angDiff(e.a, at2(tx - e.x, tz - e.z));
   // faster than traffic (.24), ignores lights; slows down for sharp turns; stops when the heat is gone
-  let want = W && !(sea && hyp(tx - e.x, tz - e.z) < 12) ? (.5 + W * .02) * (1 - min(abs(aim), 1.2) * .6) : 0;
+  let want = W && !(-44 > F.x && hyp(tx - e.x, tz - e.z) < 12) ? (.5 + W * .02) * (1 - min(abs(aim), 1.2) * .6) : 0;
   if (e.n > 0) { e.n -= k; want = -.15; } // reversing out of a jam
   e.s = toward(e.s, want, .012 * k);
   let na = e.a + clamp(aim, -.05, .05) * k * min(1, abs(e.s) * 6), ox = e.x, oz = e.z;
@@ -1487,15 +1348,16 @@ updPolice = (k, n = 0, nd = 1e9, nc, e) => {
   L = SEEN ? 0 : L + k;
   if (W && L > (W < 3 ? 480 : 840)) { H = W = W - 1; L = 0; }
   // busted: on foot within 5 m of a cop, or stopped in a car (< ~6 km/h) within 7 m, for 2 s
-  BT = W && !J && !E && !(ply.x < -52 && foot) && nd < (foot ? 5 : 7) && (foot || abs(F.s) < .03 && !(F.y > 1)) ? BT + k : 0;
+  BT = W && !J && !E && !(-52 > ply.x && foot) && nd < (foot ? 5 : 7) && (foot || abs(F.s) < .03 && !(F.y > 1)) ? BT + k : 0;
   if (BT > 120) MO = MO / 2 | 0, E = 'PILLADO'; // busted: lose half the money, run over
   // siren of the nearest cop (yelp from 3 stars): distance and pan
-  let [g, p] = nc ? spatial(nc.x, nc.z) : [0, 0]
-  AC && ((m, v, p, s = aS = aS || aLp(3, 2, 1.2, 1400, aSh(6)), h = aNow() * (m > 1 ? 3.2 : .23) % 1) => {
-  
-  aSet(s[0], (900 + 330 * (m > 1 ? h * 2 - 1 : sin(h * 6.28))), .02);
-  aSet(s[2], m ? v : 0, .08); aSet(s[3], p, .1);
-})(W && nc ? W > 2 ? 2 : 1 : 0, .3 * g, p);
+  let [g, p] = nc ? spatial(nc.x, nc.z) : [0, 0];
+  // siren voice e (saw -> hard clip -> bandpass 1.4 kHz): n 0 off, 1 wail (sine at .23 Hz), 2 yelp (rising saw at 3.2 Hz); nd: phase
+  if (AC) {
+    n = W && nc ? W > 2 ? 2 : 1 : 0; e = aS = aS || aLp(3, 2, 1.2, 1400, aSh(6)); nd = aNow() * (n > 1 ? 3.2 : .23) % 1;
+    aSet(e[0], 900 + 330 * (n > 1 ? nd * 2 - 1 : sin(nd * 6.28)), .02);
+    aSet(e[2], n ? .3 * g : 0, .08); aSet(e[3], p, .1);
+  }
 },
 // ===== PLANE =====
 // P: the stealable plane {x, y (wheels height), z, a yaw, p pitch (nose up), r roll (+ = right wing down),
@@ -1510,12 +1372,12 @@ newPlane = i => ({ x: i ? 150 + i * 35 : 262, y: 0, z: i ? -34 : -60, a: i ? PI 
 BOOM, PL,
 updPlane = (k, p = P, st = ax('L', 'R'), pi = ax('D', 'U'), ox = p.x, oz = p.z) => {
   
-  p.u = clamp(p.u + ax('2', '3') * .02 * k, 0, 1);
+  p.u = clamp(p.u + ax(2, 3) * .02 * k, 0, 1);
   // thrust pulls toward u * top speed; climbing costs speed, diving gains it
   p.s = max(0, p.s + ((p.u * 1.15 - p.s) * .005 - sin(p.p) * .004) * k);
-  let lf = clamp((p.s - .3) / .25, 0, 1), c;
+  let lf = clamp((p.s - .3) / .25, 0, 1);
   if (p.g) {
-    if (held('3')) p.s = max(0, p.s - .006 * k); // wheel brakes
+    if (held(3)) p.s = max(0, p.s - .006 * k); // wheel brakes
     p.p = p.s > .42 && pi > 0 ? min(p.p + .01 * k, .25) : toward(p.p, 0, .02 * k);
     p.r = toward(p.r, 0, .05 * k);
     p.a += st * .02 * k * min(1, p.s * 5); // taxi steering
@@ -1527,18 +1389,17 @@ updPlane = (k, p = P, st = ax('L', 'R'), pi = ax('D', 'U'), ox = p.x, oz = p.z) 
   }
   // vertical speed: lift along the nose when fast enough, sink when slow, banking costs a bit of lift
   p.v = toward(p.v, p.s * sin(p.p) * lf - (1 - lf) * .25 - abs(sin(p.r)) * .04, .01 * k);
-  c = cos(p.p) * p.s * k;
-  [p.x, p.z] = loc(p, 0, c); p.y += p.v * k;
+  [p.x, p.z] = loc(p, 0, cos(p.p) * p.s * k); p.y += p.v * k;
   if (p.y > 250) p.y = 250, p.v = min(p.v, 0);
   if (p.y > 8) p.f = 1;
   if (p.y <= 0) {
     // touchdown: safe with a level attitude and a gentle sink rate, otherwise crash
-    if (!p.g && (p.p < -.15 || abs(p.r) > .3 || p.v < -.2)) return boom();
+    if (!p.g && (-.15 > p.p || abs(p.r) > .3 || -.2 > p.v)) return boom();
     if (p.f) addMoney(DA, DL), DA = 0, addMoney(1500, 'ATERRIZAJE'), p.f = 0; // bank low-flight money first
     p.y = p.v = 0; p.g = 1;
   } else if (p.y > .3) p.g = 0;
   // water, buildings, trees, fences (grid heights at the nose and both wingtips)
-  if (p.g && p.x < -48) return boom();
+  if (p.g && -48 > p.x) return boom();
   for (let [u, w] of [[0, 4], [5, 0], [-5, 0]]) if (hg(...loc(p, u, w)) > p.y) {
     if (p.g && p.s < .2) p.x = ox, p.z = oz, p.s = 0; else return boom();
   }
@@ -1547,20 +1408,19 @@ updPlane = (k, p = P, st = ax('L', 'R'), pi = ax('D', 'U'), ox = p.x, oz = p.z) 
 // crash: debris burst, loud boom, +2 stars, the plane is gone (a new one waits at the airport),
 // the player is back on foot just behind the crash site (or the nearest intersection if that is blocked / water)
 boom = () => {
-  debris(32, P.x, P.y + 1, P.z, .8, 60);
-  bang(); cam.sh = 1;
-  heat(2);
   let [x, z] = loc(P, 0, -20); // a bit behind the wreck, facing it
   let rd = v => clamp(rou((v - 6) / 42), 0, 9) * 42 + 6; // nearest road center
   if (solid(x, z)) x = rd(x), z = rd(z);
   toFoot(x, z, P.a);
-  PL[P.i] = P = newPlane(P.i);
+  P = pcrash(P, 1);
 },
+// plane q crashes: debris burst, loud boom, camera shake s, s * 2 stars, optional reward m; a new plane takes its slot (returned)
+pcrash = (q, s, m) => (debris(32, q.x, q.y + 1, q.z, .8, 60), bang(), cam.sh = s, heat(s * 2), m && addMoney(m, 'AVION DERRIBADO'), PL[q.i] = newPlane(q.i)),
 // ===== HEAT RUN =====
 // MO money, RT run time left (ms), E end state (0 running, else 'FIN' / 'PILLADO'),
 // DA drift money being accumulated (banked when the drift ends), PT popup timer (frames).
 // TI title alpha (1 = shown, timer frozen until the first input), RH restart-hold frames, MU money pulse
-DM, DT = 0, MO, RT, DA, DL, PT = 0, RH, MU = 0, hud, tm, big, hint, pop, mm, mm0, st1, ah, TT, ring, rtx,
+DM, SB = 0, DT = 0, MO, RT, DA, DL, PT = 0, RH, MU = 0, hud, tm, big, hint, pop, mm, mm0, st1, ah, TT, ring, rtx,
 fmt = v => '$ ' + v.toLocaleString('en'),
 // new run: player on foot in the alley, empty car at its mouth, no heat, fresh traffic
 restart = () => {
@@ -1600,6 +1460,141 @@ drawMap = (c = cos(cam.w), s = sin(cam.w), x = F.x - 140, z = F.z - 139, f = max
   mm.fillStyle(0xff4fc8).lineStyle(1, 0xffffff).fillCircle(...mp(15, 153), 3.5).strokeCircle(...mp(15, 153), 3.5); // the shoe shop
   arrow(F, 0xffee00, 3.5); // the player
 };
+ext(bu, "ZsVyOzCSsV|?zCT~;|?zCyS~OzMzC]~OyOzCX"); // [16, -5, .45, 1.25, 9, -5, 3.05, 1.25, 10, 4.85, 3.05, 1.25, 49, 5.05, 1.35, 1.25, 18, 5.05, .45, 1.25, 14]
+bx(bu, 0, .45, 3.4, 2.4, 2.5, .1, 12); // partition behind the driver (seats texture)
+MODELS.bud = MODELS.sdd;
+// police light bar b0/b1 (red and blue swap when flashing)
+// base [0 1.56 -.3 1.3 .08 .3], lamps [+-.35 1.62 -.3 .55 .16 .28]
+[0, 1].map(i => bl(MODELS['b' + i] = [], "JJzc+zHRiK&zi+yYZgLnzi+yYZg", gy(.1), i ? [1, .1, .1] : [.3, 0, 0], i ? [0, 0, .3] : [.1, .3, 1]));
+// q / qf: torso + neck + head (base / female). Shoulder pivots at (+-X, 1.36) just inside the torso, hips at (+-.1, .86).
+// Ring data packed one char per number (RG): y = .8 + .01 (code - 32), radii .005 (code - 32)
+// limbs (l): y = -.44 + .01 (code - 32), radii .017 + .001 (code - 32)
+((CL = [12, 8, 4, 4], MA = [8, 8, 4, 4], ZA = [0, 0, 4, 6], ZL = [4, 0, 4, 6], RG = (s, l) => [...s].map((c, i) => (c.charCodeAt() - 32) * (i % 4 ? l ? .001 : .005 : .01) + (i % 4 ? l ? .017 : 0 : l ? -.44 : .8)), BA = (y, h) => [[8, y, 4, h], [12, y, 4, h], [8, y, 4, h], [12, y, 4, h]], i, j, y, p, SEG = [], GR = TL(19, gy(.7)), ay = 5.5, az = 0, AV, WC, mo, bo, n = 0n, s = '', c) => {
+[' >44,B669?44HG96TI64[B21`0,,', ' B68*J8@9:22EAA4NC>4TD43Z>00^/,,'].map((R, i) => {
+  let A = MODELS[i ? 'qf' : 'q'] = [];
+  lathe(A, RG(R), [([16, 16, 8, 16]), [23, 16, 1, 16], [24, 16, 8, 16], ([16, 16, 1, 16])]);
+  lathe(A, RG('X++*e***'), all(MA), 6);
+  // head: narrow chin, jaw, cheeks, temples, crown
+  lathe(A, RG('^*.(c150j476r568z..1'), [[16, 0, 16, 16], CL, [0, 6, 8, 6], CL]);
+});
+// legs, pivot at the hip / knee: thighs qL / qR (+X / -X leg), shins + feet qS / qT. The +X leg takes the right
+// half of the pants front and the left half of the back; outer columns on the sides.
+[0, 1].map(k => {
+  let x = 4 - 4 * k, b = 8 + 4 * k, R = (y, h) => [[x, y, 4, h], [x + 3, y, 1, h], [b, y, 4, h], [x, y, 1, h]], A;
+  lathe(MODELS['q' + 'LR'[k]] = [], RG('!KPK8_ddOiis', 1), R(12, 10), 6);
+  A = MODELS['q' + 'ST'[k]] = [];
+  lathe(A, RG('&<<<<KFZNFKK', 1), R(22, 10), 6);
+  box(A, 0, -.45, .05, .11, .09, .25, [ZL, ZL, ZA, ZA, ZL, ZL]);
+});
+// arms, pivot at the shoulder / elbow: upper arm qu, forearm + hand qa
+lathe(MODELS.qu = [], RG('.577@=@@P<<<', 1), BA(0, 4), 6);
+lathe(MODELS.qa = [], RG('3/11B9<<N577', 1), BA(4, 4), 6);
+lathe(MODELS.qa, RG('(#774(33', 1), all(MA), 6);
+for (i = 0; i < 6; i++) lathe(PALM, RR(0, .3 - i * .03, 1.25, .27 - i * .03), TL(12, gy(1), .1), 6, i * i * .05, i * 1.2, 0);
+for (j = 0; j < 7; j++) {
+  let c = cos(j * .9), s = sin(j * .9), F = (d, y, w) => [[1.25 + c * d - s * w, 7.2 + y, s * d + c * w], [1.25 + c * d + s * w, 7.2 + y, s * d - c * w]];
+  // one leaf tile per frond (double-sided, transparent texels discarded), its diagonal along the frond:
+  // base (u 0, v 1), sides at mid length bent up, tip (1, 0) drooping
+  let [b] = F(0, 0, 0), [l, r] = F(1.8, .35, 1.8), [t] = F(3.6, -.8, 0), L = (u, v) => [208.5 + u * 15, 32.5 + v * 15, 0, -1];
+  for (y of [-99, 99]) tri(PALM, b, l, r, L(0, 1), L(0, 0), L(1, 1), [0, y, 0]), tri(PALM, t, r, l, L(1, 0), L(1, 1), L(0, 0), [0, y, 0]);
+}
+for (j = 0; j < 3; j++) lathe(PALM, el(.15, .16), [.35, .25, .12], 5, 1.25 + cos(j * 2) * .25, 6.95, sin(j * 2) * .25);
+// street lamp (arm toward +Z over the road): tapered pole, arm curving in 3 segments, head with a bright lens
+lathe(LAMP, RR(0, .12, 5.6, .07), GR, 6);
+box(SEG, 0, -.04, .35, .08, .08, .7, GR);
+for (p of [1.2, .6, .1]) put(LAMP, SEG, modelMat(0, ay, az, 0, p)), ay += sin(p) * .7, az += cos(p) * .7;
+lathe(LAMP, RR(-.3, .3, .05, .1), GR, 6, 0, ay, az);
+box(LAMP, 0, ay - .32, az, .36, .04, .36, [1, .95, .75]);
+// park bench: seat, backrest, two legs
+bl(BENCH, "JJyLJzgRyOJJyY4zgyJPKx=JJRyLyJKydJJRyLyJ", WD, DK);
+// seat [0 .42 0 1.6 .08 .45], back [0 .55 -.22 1.6 .4 .06], legs [+-.65 0 0 .08 .42 .4]
+// traffic lights l0 (green) l1 (yellow) l2 (red): pole + housing + one lit lamp, facing +Z
+[[.1, .9, .2], [1, .75, 0], [1, .1, .1]].map((c, i) => {
+  let A = MODELS['l' + i] = [];
+  lathe(A, RR(0, .1, 3.4, .07), gy(.3), 6);
+  lathe(A, NS("|Nd^^}ud^^"), gy(.1)); // [3.2 .25 .19 .19 4.5 .25 .19 .19] // octagonal (beveled) housing
+  box(A, 0, 3.32 + i * .38, .18, .28, .28, .06, c);
+});
+// small high-wing plane, origin at the fuselage center (wheels touch y = -1.2), textured from its atlas cell
+// (dev/skins/plane_32.png, CAR_GUIDE "Plane atlas"; codes: 2 fuselage top, 3 belly, 6 wing bottom, 7 tail fin,
+// 8 stabilizer, 9 (+32 glass) cockpit glass, 10 cowling, 11 propeller, 12 hub, 13 tire, 14 interior, 15 windsock,
+// 19 fuselage side, 20 wing top)
+AV = MODELS.av = [];
+// fuselage side profile (starts at the windshield foot, the only concave corner, so the side fan stays inside):
+// windshield, roof, tail top, tail end, belly, chin, nose (z, y, half width, strip code)
+// [19, 2.5 .55 .55 41, 1.6 1.05 .5 2, -.4 1.05 .45 2, -3.3 .4 .1 3, -3.3 .05 .1 3, -.8 -.55 .55 3, 2.2 -.55 .58 10, 3.25 -.25 .42 10, 3.3 .35 .42 10]
+ext(AV, "^{eyYyYyKzgz.yTL z.yOLuHyJTMuHOTMx-xGyYM{FxGy]T|S1yLT|XnyLT");
+bx(AV, 0, 1.05, .9, 10, .14, 1.6, 6, 6, 6, 20, 6, 6); // wing on the roof
+// tail fin [0 .35 -2.85 .1 1.3 1], stabilizer [0 .2 -2.9 3.2 .08 .9], cabin interior [0 -.1 1.3 .5 1 1.4] (small: the fuselage narrows toward the tail, a bigger box shows through) (seen through
+// the glass), wheels [+-.9 -1.2 .6 .22 .6 .6], nose wheel [0 -1.2 2.6 .18 .5 .5] (hub on the sides, tire elsewhere),
+// spinner [0 -.12 3.3 .36 .36 .4];
+// then the propeller pp: two crossed bars [0 -1.1 0 .16 2.2 .06] [0 -.08 0 2.2 .16 .06], spun with the roll angle
+WC = [12, 12, 13, 13, 13, 13];
+NC("JnuvTzHz)J_uq|NRy}J@zHyTz)zRy}wcy_ay_y_x#wcy_ay_y_Jwc{o]yTyTJ>|XooyJJwmJZ{FPJBJ{FZP", 6).map((b, i) => bx(i > 6 ? (MODELS.pp = []) : AV, ...b, ...[[7], [8], [14], WC, WC, WC, [10], [11], [11]][i]));
+// windsock (red / white bands, the plane atlas' spare cell; along +Y, laid forward when drawn) and the tower radar
+// (post + dish panel, tilted when drawn)
+lathe(MODELS.ws = [], RR(0, .3, 2, .12), all(RC(15)), 6);
+// parachute: canopy dome (striped umbrella tile) on two lines from the shoulders
+lathe(MODELS.ch = [], RR(2.5, 2.6, 3.4, 1.9, 3.7, .1), TL(16, [1, .45, .1]), 8);
+[-.25, .25].map(x => box(MODELS.ch, x, 1.4, 0, .03, 1.2, .03, DK));
+bl(MODELS.rd = [], "JJJJ_yi_KJyTT{ZyiT", DK, gy(.8)); // post [0 0 0 .2 .7 .2], dish [0 .5 .1 2.4 .7 .1]
+// explosion debris (orange / gray)
+box(MODELS.xo = [], 0, -1, 0, 2, 2, 2, [1, .55, .1]);
+box(MODELS.xg = [], 0, -.6, 0, 1.2, 1.2, 1.2, gy(.3));
+// particles: unit boxes centered on the origin, scaled per draw (f0 smoke, f1 fire, f2 spark, f3 flash)
+[gy(.4), [1, .45, .1], [1, .8, .2], [1, 1, .8]].map((c, i) => box(MODELS['f' + i] = [], 0, -.5, 0, 1, 1, 1, c));
+box(MODELS.tr = [], 0, -.03, .5, .06, .06, 1, [1, .9, .5]);
+box(MODELS.wk = [], 0, 0, 0, 1, 0, 1, [.95, .97, 1]); // boat wake (flat, top face only)
+// motorbike (+Z forward, ~1.9 m), bike regions: 0 tank 1 seat 2 frame 3 fork 4 front 5 rear 8 engine 9 exhaust
+// 10 handlebar 11 fairing 12 under. Wheels are drawn apart (wm).
+
+// engine [0 .2 .05 .26 .3 .45], frame [0 .38 0 .14 .2 1.1], tank [0 .58 .25 .3 .22 .5], fairing [0 .48 .62 .36 .38 .16],
+// seat [0 .66 -.32 .26 .1 .6], tail [0 .6 -.72 .2 .16 .22], fork [0 .3 .66 .07 .55 .07], bar [0 .9 .5 .72 .06 .06], exhaust [.17 .14 -.4 .09 .09 .6]
+// Allocate once so each body part appends to the same mesh.
+mo = MODELS.mo = [];
+NC("J_OeiyOJqJX_z4Jy]diayTJyRyaoqZJye)eTy_Jy_x6_ZaJiyeQyYQJy}yTykPP[X SSy_", 6).map((b, i) => bx(mo, ...b, ...[[8], [2], [0], [11, 11, 12, 11, 11, 4], [1], [2, 2, 12, 1, 5, 2], [3], [10], [9]][i]));
+// speedboat (~4.4 m): hull, pointed bow (two narrowing boxes), stripe, windshield, seat, outboard motor
+bo = MODELS.bo = [];
+// hull: lathe laid forward, pointed bow, flat transom; blue bottom = the same rings a bit wider, flat on top
+let BR = NS("vjy}yYdxLz yYdz>yiyTa{UOTT"), HT = []; // [-2.05 .9 .55 .25 -.5 .92 .55 .25 1.2 .7 .5 .22 2.35 .05 .1 .1]
+lathe(HT, BR, WT);
+lathe(HT, BR.map((v, i) => i % 4 > 2 ? .02 : i % 4 ? v * 1.04 : v), [.15, .35, .6]);
+put(bo, HT, modelMat(0, .55, -.1, 0, -H2));
+bl(bo, "JJynyTzRyORKJynx8y}iyTLJ_v`nz)n", [.18, .22, .28, 2], [.5, .35, .25], DK); // windshield [0 .75 .5 1.4 .45 .08], seat [0 .75 -.7 .9 .3 .5], motor [0 .2 -2.15 .35 1 .35]
+// burnt wrecks: every vehicle model darkened (rgb and the glass flag x.15: glass becomes opaque black)
+// textured vertices (a < 0) become flat near-black
+for (let n of 'sd pc cv bu mo wc wb wm bo'.split(' ')) MODELS[n + 'w'] = MODELS[n].map((v, i, a, j = i % 10) => j > 2 && j < 7 ? a[i - j + 6] < 0 ? j < 6 ? .07 : 0 : v * .15 : v);
+// uzi in forearm space (pivot at the elbow): hangs along -Y from the hand (points forward when the arm is raised), magazine toward -Z
+box(MODELS.uz = [], 0, -.42, 0, .06, .2, .085, DK); // held in the hand (forearm ends ~-.3)
+bl(MODELS.uz, "JJxMJMRMJJ'ANOV", DK);
+// [0 -.49 0 .03 .08 .03] [0 -.34 -.09 .04 .05 .12]
+// (_: the load event; the canvas, rc and CC as default params)
+// copy cell s to cell n, paint pixels (teal or red families, not the 217-red tail lights) become f(u, v) scaled by
+// the pixel's brightness (keeps the shading)
+// (P: which pixels are paint, from r, g, b and the row v; default: the car paint test)
+// CC: red, white, black, yellow, blue, green, silver
+IMG.onload = (_, c = new OffscreenCanvas(1280, 48), x = c.getContext('2d'), rc = (n, s, f, P = (r, g) => (g > r + 25 || r > g + 70) && r != 217, i, d = x.getImageData(s * 32, 0, 32, 32), p = d.data) => {
+    for (i = 0; i < 4096; i += 4) {
+      let r = p[i], g = p[i + 1], b = p[i + 2], l = (r + g + b) / 300;
+      if (P(r, g, b, i >> 7)) f(i / 4 % 32, i >> 7).map((c, j) => p[i + j] = c * l);
+    }
+    x.putImageData(d, n * 32, 0);
+  }, CC = [[200, 35, 35], [240, 240, 235], [40, 42, 48], [235, 190, 40], [40, 80, 185], [45, 130, 70], [165, 170, 175]]) => {
+  x.drawImage(IMG, 0, 0);
+  // planes (the PNG's cell 14, before the police car takes it): cells 36..39, the light gray paint (fuselage,
+  // wings, tail; rows above 24) recolored red, white, black, yellow (colors / 2.3: the paint is bright)
+  CC.slice(0, 4).map((c, k) => rc(36 + k, 14, () => c.map(v => v / 2.3), (r, g, b, v) => abs(r - b) < 20 && g > 140 && v < 24));
+  // police: navy roof and lower body sides, white elsewhere
+  rc(14, 10, (u, v) => v < 8 && (u > 15 && u < 24 || u < 8 && v > 3) ? [30, 40, 90] : [240, 240, 235]);
+  [10, 11, 13].map((s, j) => CC.map((c, k) => rc(15 + j * 7 + k, s, () => c)));
+  CV = c; upTex();
+};
+// the atlas (the 75-color PNG re-encoded as lossless WebP, pixel-identical: 2808 bytes) as one big base-92 number: printable ASCII minus the double quote, slash and backslash
+// (denser than base64); decoded to bytes with BigInt, then handed to the image as base64
+  for (c of "$A%R~T9`HYDfh'+Slv=;L PXZ-dKs>0G'bI3&a+dh]OZK[E3Q#ne+1<owms2> )#'BVRs.~jiEa&NH@6KZnVWWI9#@VuZjp%3r3M9#*WO8WaeRqePOwd,I_%}L*hl+A>D,~uH;F i}#[wGGl}XG&OWl_P 6xmjsXgFwB^#T]r 1MNO2SApA51.h@2?o*?Y[<I=t`:AAk8g[KUsFNaC4StSo^}_xGy#+avW1q4m:>dB].c hf$kmS4JL~A4w'k>p=fFh3Msd6FW?E?t]S|&vV<$@uPG|=*{~@N`)Y|&d:Njc|po*5:TR37tVTSFI@RGYZ%3kduDv_n<3+$6)wJMAP0uK{BK:c4^~MR|^u~[7^6]gj8M|HPLYw)hoQJaK:c8ax2;>`Z`SlFJ#jHL&`DC:Dp9O6ufA+&CRCcR*0c~w]iFJq<+WmFX&aP~VB[uQMmZ=#NN.)@dh5{508Qa&O,:svYB)9&JftuHfTGKltk;mV)+=3@WRaB[fv1J`H_@*@lTuO1>Y=u+*qm@FpOz@c!!6`l^iJk2C{?|{V`rXD]0:.r<4PFzcO08&DzFAN2^{Z`{Iepj$9H4ugD1Ma0oumDBlG32.^4vrm*qFh;>5L}$;GM@>,`|DSSMPW:T;18{l2*L4K]5t*2BQ=`>yo:rnQG@{LC ~Bctgf-a.1&m0IfJ1<b0lv>*aAl8isqGHK1.,'u+X%uDu'Jig$SZSJe-zgI'2c#hDzBhr`|M8k#h.5*zIK5bg:l{t=gG3bkpf_GoFIf2sy|,ZEMUM')CoHNa~c#O2Wx #p[sS,,k1?Qn+~3bajYR$}c:*rOH;iiWSvwKY#.h2~Q3%O&*v2G}Q-#x)D1^>Vg%D;y.t1{!zyn:o{g'lUL%>aghGjJSP~,&y,x{1r_#W!(tL!>k%de.UGG-yK(nIl8lPmr+(A=8AO:RF7,jRyVia_7B~?i1U~$:Y!Fzo2kl37P5X -&?%)O8C8dZa~_20j&AATblXM:SyM ^w`@?`]mT-1fys$}bhr+_mp1tL~rT82,0PI&eNK_@W){:N*#d',+.-zX|~,9diVq4oJa7-T=!2LfZ$2t+P1vJib1cUHand8u{k`66[`_<VbCI!{$I(~j8O#+~64,K0Ehvi!^(Rj-Uj3u8n~R>s1I=J.0{nU|32nS7!fU>k-u)!p!f;%b#th0Q.bMkZkJSN8GF8},-s|Ujo;KD{P=zV+$<pZ0;~$J%@qmY.:T93H6_sE#]JH4aXx(S165#]V|J9Nix(~-Jwi[,>CJw}d@6'%Qkll,E%k 7T),-07+RP&-`.-A:43oMk1CWuJdmpLOK5?RPdB>e<Dm(i|]~-x@WW'@p^,xN&2d6jgygqKK-@> hcNULaEul2Zb]gD,0Ci%+%Bfx3_+`w{5y,pxah6EoJh~:`kPbOPPuqi R-yN:F}[X!#pav`MY$rFL&xU>zniTWQafX6ULmXRC~#f#Sh]`SEm+A=7Xiu:8zd%<^&[P%rx7_JZjinj>@^]Q|g^aAQf{fBqA,&C;ZLHhoH?B';M-,'6o)!Rla>o3&&K=E6Y>`dfcMFH5:0cKNNVPyAgH~=Zkpv;i:4R1 o:1*z9b!Tl3$^'vVlIR&?~ItwnRTTGdg`Ph $?F>!ed-=lf{F]IAdj(yh6L_oNK8rFs>5Q^lCzgZ6W=Rm`x1mWeX1b>su,cI9(:GfyUoCh^<h`<Ekx8gD:L*Q+4(''&d0(Jlit9I7;&o5(9;6i}k|+xDm0C>oqJ7%7`j%y&9zONPnh`t~u-4+#];xB*>45IHH'LcF[SY)d-uEvAL3{Eu7D,W4>9O)h6gjEl#WKz%Gyn{B'C!lN'sK@NJ;AyVgpas-HN3J;nX3<%e7B66s6>n%1$By;[i07Yt43Nw-_z#K?bc>@1{b'zs1{nG275Q,8Z)&N6l$TPm_!Y~)2s4vr1f9sD0WkPQH#JI*t:Z9S_A98Qx=H2WuFU.0HI$1Dr^7ghv3?,yTXYT8KX|,G4SP|ba~(4SMh>U]|~$q*@o3V-<&IV`;bhR3nPiFHRZUWc@05&Q)!'77pE3xE)5QkRQAb:+6_dqEf((6ekJ+7R8gJ#JZiehlF#v<;z{>F-^(O[F$F1]V57-,#BLR7&G;m?b6+d^6uO:Ve`L|=%TnGFM@Gl'S-&n{gPsb2HL-&j}*o1X1]^>!hE`Gn<Zn($Wsw+QCfh|ZCkF8u~aBj(YfYr_,o4wWfvRZAtiCdB^?=]^`We)8A)Y(oMVS5pKQWjv]~2|,5|}9p(+Pi}C3<&2oaf[Ijo#f{1L]j,ZZfSd;Q:v,6l*s9*U|} 'di^|ICW+g'J2&ZL@j^k7:Q<e]e<3@et<?L7#54^7lwI}EOVb: ..,@IO<#{?dwvE=eSMxNej>I?`y{0}U{Ro%WA2uCZ)Q)L4:UgBN={1_Su'0ChG}ipZOc'-'vRc$3WWhmt+?`$GWYf&[Dn9yX(*|-Jn9w 51SIlE73 6Qeig3k:ir^ S{GC7:=!C 1l4H) 3JOAdA?yc840#}?* [7>:lq GU2lO3e5,yho@T` b-lHrjO`Vgg~ea^}'YyhC}pu^F-*J.v@DC'PUzZ<l?nj)IEh5=wE4#l)Py3 ^%oPXtp[6ei'B9&'If@-4Bd:@8Y39~K1#?c^68MD<% 'ajV6u#:U054EL^N<&NRoeerB^)T5_J@(R9;C9<1!: qetycW4W%ij.fuWdxduI3~xIY)pGWiDF|iab$}^u7'!,ieEW7mp4QU+PF%<a u*nQMb; X'5c)h8N=6('G%O&JUaJW2XQ}SZCgal$|]wA,RD7U_'~A @TDZwN*s2YXi]4;0WO:tm4N8kkrKu85|&{Mw^a&s]}V>%|%Q^>(uFypYqGYX9`+(j6}}IiluSkCfV+1H78XucswWIw0y^(ae2TCs]c,:!;tvN1?~Uobh@tM> 7rA,:<ejs$'g!:^-tWxz%dMBZ3%Kk_$Z1{GFZLuQe4+hcF$jN,{lK>hLE(:R:~oJxhYs~&VT{B>s$.,P35%H..1X}gsp9d%n}Z8^@S{(`DCAn`'SuC+t1vVcvq.7==&f_cb%soC=4)$<G4W0[tVt@0-e[O^qh$<2ezbB:){*fYRR9:Ai|~umgMVmlk+WA8Ld$[?GmPp$;ALgL^=}^!=&Plw~%2JlnYre=p-EB_X>#08>L7C$Pmr't>2HxI;gezjBX|BYu{t;M-Mm8pL;Ewkq)pe?8m#ODy!f?)OO`|9}EGoW72=B&-N&}l&:'Gy|Pd6o%HumGE_Eh?wQP>Kbo02wlKc>N[$k9~'OW&f-lLzwu=gB|^#o<KT0ncE1>R*M~r$qx(Ws!2e~xEg - Cy&F#[5hymW8inL##,%Euoh#;>Z5Nr+lZ9`q@2#r5F]P$6)g~HQ*)vLi=$]C w rO&i67!S!:sL{+gn}y-^Sj+_J_1IOuIP&B*,N&9#BE}PT&TBUa6-zzV[7v4t+A}P`EVm0*3h]gbN3:Bk78xQo") n = n * 92n + BigInt(ci(c));
+  for (i = 2808; i--; n >>= 8n) s = String.fromCharCode(Number(n & 255n)) + s;
+  IMG.src = 'data:image/webp;base64,' + btoa(s);
+})();
 new Phaser.Game({
   type: 2, // Phaser.WEBGL
   width: 800,
@@ -1610,17 +1605,17 @@ new Phaser.Game({
   fps: { limit: 61 }, // ~60 updates/s on 120/144/240 Hz screens too (61: 2 frames at 120 Hz pass the limit)
   // ===== PHASER SCENE =====
   scene: {
-  create() {
+  // (_: Phaser's scene data; A: the object factory, tx: text helper, MP: minimap layer origin, LF: title font)
+  create(_, r = this.renderer, A = this.add, tx = (x, y, o, f = 20, c = '#fff', t = '', s) => A.text(x, y, t, { fontFamily: 'monospace', fontSize: f, color: c, stroke: '#000', strokeThickness: 4, ...s }).setOrigin(o), MP = { x: 720, y: 80 },
+    LF = { fontFamily: '"Arial Black",sans-serif', fontStyle: 'bold italic', strokeThickness: 10 }) {
   buildCity();
-  let r = this.renderer;
   initGL(r.gl);
   r.on('restorewebgl', () => initGL(r.gl));
-  let ext = this.add.extern();
-  ext.render = (() => withTex(() => {
+  A.extern().render = (() => withTex(() => {
   gl.enable(2929); gl.depthFunc(515); gl.depthMask(1); gl.clear(256); // DEPTH_TEST, LEQUAL, DEPTH_BUFFER_BIT
   gl.enable(2884); gl.disable(3042); // CULL_FACE on, BLEND off
   gl.useProgram(prog);
-  for (let i = gp(34921); i--;) i < 3 ? gl.enableVertexAttribArray(i) : gl.disableVertexAttribArray(i);
+  for (let i = gp(34921); i--;) gl[(i < 3 ? 'en' : 'dis') + 'ableVertexAttribArray'](i); // attributes 0-2 on, the rest off
   // projection (fov cam.f, aspect 4:3, near .3, far 3000) x view (eye cam.e looking at cam.t)
   let t = 1 / M.tan(cam.f / 2), e = cam.e, z = nrm(sub(e, cam.t)), x = nrm([z[2], 0, -z[0]]), y = cross(z, x), d = a => -dot(a, e);
   let V = VM = mul([t / (4 / 3), 0, 0, 0, 0, t, 0, 0, 0, 0, 3000.3 / (.3 - 3000), -1, 0, 0, 1800 / (.3 - 3000), 0],
@@ -1636,9 +1631,6 @@ new Phaser.Game({
   gl.enable(3042); gl.blendFunc(1, 771); gl.depthMask(0); gl.uniform1f(uG, 1);
   for (let [k, m, s, o] of drawList) s || drawMesh(meshes[k], m, o);
 }));
-  let A = this.add;
-  // text at x, y with origin o, font size f, color c, initial text t, extra style s
-  let tx = (x, y, o, f = 20, c = '#fff', t = '', s) => A.text(x, y, t, { fontFamily: 'monospace', fontSize: f, color: c, stroke: '#000', strokeThickness: 4, ...s }).setOrigin(o), MP = { x: 720, y: 80 };
   hud = tx(12, 8, 0, 32, '#5f5'); // money: green, pulses when it grows
   tm = tx(14, 46, 0, 22);
   pop = tx(14, 74, 0, 20, '#7f7');
@@ -1647,13 +1639,12 @@ new Phaser.Game({
   big = tx(400, 260, .5, 56, '#fff', '', { align: 'center' });
   ah = tx(790, 590, 1); // altitude / speed while flying
   // minimap (top-right 140x140): dark frame, static map layer, dynamic dots layer, border
-  let K = A.graphics().fillStyle(0x2a6aa0).fillRect(650, 10, 140, 140).createGeometryMask(); // sea; clips the layers
-  ((g, AS = 0x333438) => {
-  [[0x5a6648, -48, -6e3, 12e3, 12e3], [0xd8c890, -48, -6e3, 36, 12e3], [AS, -12, -6e3, 12, 12e3]].map(a => rect(g, ...a));
-  for (let n = -24; n < 25; n++) n > 0 && rect(g, AS, n * 252, -6e3, 12, 12e3), rect(g, AS, 0, n * 252, 6e3, 12);
-  [[AS, 0, 0, 390, 390], [AS, 40, -70, 290, 20], [AS, 252, -50, 12, 50], [0x888888, 290, -40, 32, 28], [0x8a6a48, -80, 156, 36, 8]].map(a => rect(g, ...a));
+  // sea; clips the layers. g: the static layer (AS asphalt): land, sand, avenue, city, airport, hangar, pier (none of
+  // these touch the country roads drawn next except the same-colored city), country roads every 252 m, blocks
+  let K = A.graphics().fillStyle(0x2a6aa0).fillRect(650, 10, 140, 140).createGeometryMask(), g = mm0 = A.graphics(MP).setMask(K), AS = 0x333438, n;
+  [[0x5a6648, -48, -6e3, 12e3, 12e3], [0xd8c890, -48, -6e3, 36, 12e3], [AS, -12, -6e3, 12, 12e3], [AS, 0, 0, 390, 390], [AS, 40, -70, 290, 20], [AS, 252, -50, 12, 50], [0x888888, 290, -40, 32, 28], [0x8a6a48, -80, 156, 36, 8]].map(a => rect(g, ...a));
+  for (n = -24; n < 25; n++) n > 0 && rect(g, AS, n * 252, -6e3, 12, 12e3), rect(g, AS, 0, n * 252, 6e3, 12);
   BK.map((b, n) => rect(g, [0x9a9890, 0x4d8a3a, 0x7aa0c8][b], 12 + (n / 9 | 0) * 42, 12 + n % 9 * 42, 30, 30));
-})(mm0 = A.graphics(MP).setMask(K));
   mm = A.graphics(MP).setMask(K);
   A.graphics().lineStyle(2, 0xffffff).strokeRect(650, 10, 140, 140);
   // wanted stars: gray row with the filled (yellow) ones drawn over it
@@ -1663,27 +1654,26 @@ new Phaser.Game({
   DM = A.rectangle(400, 300, 800, 600, 0);
   // title card in the style of the cover logo: pink presenter line, white / yellow heavy italic title with a black
   // outline, black band with the edition (pink) and the goal
-  let LF = { fontFamily: '"Arial Black",sans-serif', fontStyle: 'bold italic', strokeThickness: 10 };
+  // title lines [y, size, color, text], centered at x 400
   TT = [A.graphics().fillStyle(0).fillRoundedRect(160, 330, 480, 96, 22),
-    tx(400, 150, .5, 24, '#ffa8d8', 'BIPBOP LABS PRESENTS', LF), tx(400, 214, .5, 64, '#fff', 'GRAND THEFT', LF), tx(400, 286, .5, 76, '#ffc800', 'BANANA', LF),
-    tx(400, 361, .5, 30, '#ff9ccf', 'PRE-REVENUE EDITION', LF), tx(400, 405, .5, 20, '#fff', '3 MINUTOS PARA HACER PLATA', LF)];
+    ...[[150, 24, '#ffa8d8', 'BIPBOP LABS PRESENTS'], [214, 64, '#fff', 'GRAND THEFT'], [286, 76, '#ffc800', 'BANANA'],
+    [361, 30, '#ff9ccf', 'PRE-REVENUE EDITION'], [405, 20, '#fff', '3 MINUTOS PARA HACER PLATA']].map(([y, f, c, t]) => tx(400, y, .5, f, c, t, LF))];
   hint = tx(400, 550, .5);
   restart();
   },
-  update: (time, dt) => {
-  let k = min(dt / 16.67, 3), o, q, a, b, f, t, c, nb, sec, U;
+  update: (time, dt, k = min(dt / 16.67, 3), o, q, a, b, f, t, c, nb, sec, U, u, v, s, B) => {
   T = time;
   // hold B6 (L) ~1.5 s anywhere to restart; releasing early drains the ring
-  RH = held('6') ? RH + k : max(0, RH - 4 * k);
+  RH = held(6) ? RH + k : max(0, RH - 4 * k);
   if (RH > 90) restart();
   if (TI == 1 && Object.values(PRESSED).some(v => v)) TI = .99; // a fresh press: the restart button still held keeps the title up
   if (TI < 1) TI = max(0, TI - .03 * k);
-  if (E) { if (PRESSED.START1 || PRESSED.START2 || hit('1')) restart(); }
+  if (E) { if (PRESSED.START1 || PRESSED.START2 || hit(1)) restart(); }
   else {
     if (TI < 1 && (RT -= k * 16.67) <= 0) RT = 0, E = 'SE ACABO EL TIEMPO';
     if (J) updJack(k);
     else if (PJ) { // boarding: walk to the left door (40 frames), hop in (15 frames)
-  let p = ply, [dx, dz] = loc(P, 1.5, .6), f = min(1, (PJ.t += k) / 40);
+  let p = ply, [dx, dz] = loc(P, 1.5, .6); f = min(1, (PJ.t += k) / 40);
   
   p.x = PJ.x + (dx - PJ.x) * f; p.z = PJ.z + (dz - PJ.z) * f;
   if (f < 1) p.a = at2(dx - PJ.x, dz - PJ.z), p.ph += .1 * k; else p.ph = 0;
@@ -1693,23 +1683,26 @@ new Phaser.Game({
     else if (foot) updFoot(k);
     else if (inP) {
       updPlane(k);
-      if (inP && hit('1') && P.g && P.s < .03) toFoot(...loc(P, 3, 0), P.a), P.u = 0; // step out of the plane
+      // step out of the plane on the ground; in the air (12 m+) jump: skydive, the empty plane flies on and crashes
+      if (inP && hit(1)) P.g ? P.s < .03 && (toFoot(...loc(P, 3, 0), P.a), P.u = 0) : P.y > 12 && (toFoot(...loc(P, -3, 0), P.a, P.y), ply.pc = 1, ply.vy = P.v, P.n = 2);
     } else {
       updateCar(k);
       // under ~10 km/h (not if the car just blew up). Bikes: swing the leg back over (reverse mount)
-      if (hit('1') && abs(car.s) < .05 && !foot) { let [x, z] = loc(car, .75, -.3); exitCar(); if (car.c == 1) J = { o: car, t: 72, x, z, X: 1 }; }
+      if (hit(1) && abs(car.s) < .05 && !foot) { let [x, z] = loc(car, .75, -.3); exitCar(); if (car.c == 1) J = { o: car, t: 72, x, z, X: 1 }; }
     }
     // drift money (~$40/s) or low-flight money (under 20 m, ~$24/s), banked (x multiplier) when it ends
     if (inP ? !P.g && P.y < 20 : !foot && car.c < 2 && car.dr > 20) DA += k * (inP ? .4 : .7), DL = inP ? 'RASANTE' : 'DRIFT';
     else if (DA) addMoney(DA, DL), DA = 0;
+    // wanted bonus: every 10 s still on the run with 2+ stars (x the star multiplier)
+    (SB += W > 1 ? k : -SB) > 600 && (SB = 0, addMoney(100, 'FUGA'));
   }
   F = foot ? ply : inP ? P : car;
   if (car.H) car.y = max(car.y - .006 * k, -3); // sinking car
   // reversing: follow the nose (car.a), not the travel angle, so the camera never swings to the front
   // on foot: over-the-shoulder, the camera pivot is 1.1 m to the player's right (right of heading a = (-cos a, sin a))
-  if (foot) { let a = PJ ? P.a - .7 : J ? J.o.a - .7 : ply.a; updateCam(k, ply.x - cos(a) * 1.1, max(ply.y, -.6) + .3, ply.z + sin(a) * 1.1, a, 0, J || PJ ? .9 : .5);
+  if (foot) { a = PJ ? P.a - .7 : J ? J.o.a - .7 : ply.a; updateCam(k, ply.x - cos(a) * 1.1, max(ply.y, -.6) + .3, ply.z + sin(a) * 1.1, a, 0, J || PJ ? .9 : ply.pc ? 1.6 : .5);
     // never inside a vehicle: an eye within a vehicle's footprint rises over its roof
-    for (o of ENT) if (!o.k) { let [u, v] = lcl(o, cam.e[0], cam.e[2]); if (abs(u) < o.w + .4 && abs(v) < o.l + .4) cam.e[1] = max(cam.e[1], o.l > 3 ? 4.5 : 2.8); }
+    for (o of ENT) if (!o.k) { [u, v] = lcl(o, cam.e[0], cam.e[2]); if (abs(u) < o.w + .4 && abs(v) < o.l + .4) cam.e[1] = max(cam.e[1], o.l > 3 ? 4.5 : 2.8); }
   }
   // plane: third camera profile (further back and higher), target follows part of the pitch
   else if (inP) updateCam(k, P.x, P.y, P.z, P.a, P.s / 1.15, 2.6), cam.t[1] += sin(P.p) * 12 - 3;
@@ -1719,14 +1712,21 @@ new Phaser.Game({
   // chunks within 2 of the camera's chunk (at most one built per frame), freed beyond ~3.5;
   // the mountain ring follows the camera
   let [ex, , ez] = cam.e, I = rou((ex - 6) / 126), Jc = rou((ez - 6) / 126);
-  for (q in OC) { let [b, , c] = OC[q]; max(abs(c[0] - ex), abs(c[2] - ez)) > 440 && (gl.deleteBuffer(b), delete OC[q]); }
+  for (q in OC) { [b, , c] = OC[q]; max(abs(c[0] - ex), abs(c[2] - ez)) > 440 && (gl.deleteBuffer(b), delete OC[q]); }
   nb = 1;
   for (a = I - 2; a < I + 3; a++) for (b = Jc - 2; b < Jc + 3; b++) OC[[a, b]] || nb && (nb = 0, OC[[a, b]] = mkC(a, b));
   dl(['mt', modelMat(ex, 0, ez, 0), 1]);
   updateWorld(k);
   // windsock: swings with a slowly turning wind, droops when it calms; radar: one turn per ~5 s
   dl(['ws', modelMat(70, 5.8, -45, T / 5e3 + sin(T / 1300), sin(T / 900) * .2 - .25 - H2), , 36], ['rd', modelMat(200, 18.2, -92, T / 800, .3)]);
-  for (q of PL) { let B = modelMat(q.x, q.y + 1.2, q.z, q.a, q.p, q.r); dl(['av', B, , q.o], ['pp', mul(B, modelMat(0, 0, 3.8, 0, 0, q.q)), , q.o]); }
+  ply.pc > 1 && dl(['ch', modelMat(ply.x, ply.y, ply.z, ply.a)]);
+  for (q of PL) {
+    // abandoned in the air (n 2): the nose drops and it crashes into whatever it reaches
+    if (q.n > 1) {
+      q.p = max(q.p - .004 * k, -.7); [q.x, q.z] = loc(q, 0, q.s * k); q.y += (sin(q.p) * q.s - .05) * k;
+      if (q.y < max(0, hg(q.x, q.z))) pcrash(q, .5, 1000);
+    }
+    B = modelMat(q.x, q.y + 1.2, q.z, q.a, q.p, q.r); dl(['av', B, , q.o], ['pp', mul(B, modelMat(0, 0, 3.8, 0, 0, q.q)), , q.o]); }
   for (b of BOOM) {
     fly(b, k, .012); b.a += .1 * k; b.t -= k;
     if (b.y < 0) b.y = 0, b.J *= .7, b.K *= .7, b.U *= -.3;
@@ -1736,7 +1736,7 @@ new Phaser.Game({
   // particles shrink as they die (smoke grows first); tracer lasts a few frames
   for (f of FX) {
     fly(f, k, 0);
-    let u = (f.t -= k) / f.l, s = f.s * (f.m == 'f0' ? sin(PI * u) : u);
+    u = (f.t -= k) / f.l; s = f.s * (f.m == 'f0' ? sin(PI * u) : u);
     if (u > 0) dl([f.m, sc(modelMat(f.x, f.y, f.z, f.t * .1), s)]);
   }
   FX = FX.filter(f => f.t > 0);
@@ -1748,20 +1748,20 @@ new Phaser.Game({
   let dr = !foot && !inP && !E, cs = abs(car.s) / .62;
   if (AC) {
     engine(inP ? 3 : car.c, inP ? P.s / 1.15 : cs, inP ? P.u : held('U'), !foot && !E);
-    ((s, v) => {
-  aK = aK || [aLp(0, 2, 4, 2e3), aLp(4, 0, 1, 5e3)];
-  let a = min(1, max(0, s * 2.2 - .3)) * min(1, v * 3);
-  a *= a * (3 - 2 * a); // smoothstep
-  let [n, q] = aK, k = a > aQ ? .04 : .14; // fast in, slow out
-  aQ = a;
-  aSet(n[1], 1500 + 1800 * s); aSet(n[2], a * .3, k);
-  aSet(q[0], 800 + 450 * s + 200 * v + rnd() * 60, .02); // per-frame jitter = rubber chatter
-  aSet(q[2], a * .1, k);
-})(dr && car.c < 2 && abs(angDiff(car.a, car.t)) * 3, cs);
-    (a => {
-  aR = aR || aLp(0, 2, 7, 1500);
-  aSet(aR[1], 700 + rnd() * 2200, .02); aSet(aR[2], a * 1.5 * (.6 + rnd() * .4), a ? .03 : .12);
-})(dr && SW && min(1, abs(car.s) * 3));
+    // tire screech (s: slip 0..1, speed cs): band-passed noise + jittered triangle squeal; a: level, c: fade time
+    s = dr && car.c < 2 && abs(angDiff(car.a, car.t)) * 3;
+    aK = aK || [aLp(0, 2, 4, 2e3), aLp(4, 0, 1, 5e3)];
+    a = min(1, max(0, s * 2.2 - .3)) * min(1, cs * 3);
+    a *= a * (3 - 2 * a); // smoothstep
+    [nb, q] = aK; c = a > aQ ? .04 : .14; // fast in, slow out
+    aQ = a;
+    aSet(nb[1], 1500 + 1800 * s); aSet(nb[2], a * .3, c);
+    aSet(q[0], 800 + 450 * s + 200 * cs + rnd() * 60, .02); // per-frame jitter = rubber chatter
+    aSet(q[2], a * .1, c);
+    // wall scrape level t
+    t = dr && SW && min(1, abs(car.s) * 3);
+    aR = aR || aLp(0, 2, 7, 1500);
+    aSet(aR[1], 700 + rnd() * 2200, .02); aSet(aR[2], t * 1.5 * (.6 + rnd() * .4), t ? .03 : .12);
   }
   SW = 0;
   // ===== HUD =====
@@ -1778,8 +1778,8 @@ new Phaser.Game({
   drawMap();
   U = 'B1  ';
   hint.setText(E ? 'START  REINICIAR' : DA ? DL + ' $' + (DA | 0) : J || PJ ? '' :
-    foot ? NP || near ? U + (NP || near.e ? 'SUBIR' : 'ROBAR') : TI > 0 ? 'PALANCA MOVER   B1 SUBIR AL AUTO   B2 DISPARAR' : '' :
-    inP ? P.g ? (P.s < .03 ? U + 'BAJAR\n' : '') + 'B3 GAS  B2 FRENO  ABAJO SUBIR  ARRIBA BAJAR' : '' :
+    foot ? ply.pc == 1 ? U + 'PARACAIDAS' : NP || near ? U + (NP || near.e ? 'SUBIR' : 'ROBAR') : TI > 0 ? 'PALANCA MOVER   B1 SUBIR AL AUTO   B2 DISPARAR' : '' :
+    inP ? P.g ? (P.s < .03 ? U + 'BAJAR\n' : '') + 'B3 GAS  B2 FRENO  ABAJO SUBIR  ARRIBA BAJAR' : U + 'SALTAR' :
     car.ss > 30 ? U + 'BAJAR' : '');
   ah.setText(inP ? 'ALT ' + (P.y | 0) + 'm\n' + (P.s * 216 | 0) + ' km/h' : '');
   big.setText(E ? E + '\n' + fmt(MO) : '');
