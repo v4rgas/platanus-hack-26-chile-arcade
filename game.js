@@ -455,7 +455,7 @@ ext = (A, D, s) => {
 // textured box: one region code for all faces, or six (-X, +X, bottom, top, back, front)
 bx = (A, x, y, z, w, h, d, ...c) => box(A, x, y, z, w, h, d, (c[1] ? c : [c, c, c, c, c, c].flat()).map(RC)),
 // wheel: 8-sided cylinder along X (hub code on both faces, tire code on the tread), centered on the origin
-cyl = (n, r, w, hb, tr, A = MODELS[n] = [], o = gy(0), P = [...'01234567'].map(i => [cos(i * PI / 4 + PI / 8) * r, sin(i * PI / 4 + PI / 8) * r]), s) => {
+cyl = (n, r, w, hb, tr, A = MODELS[n] = [], o = gy(0), P = [...'01234567'].map(i => [cos(i = i * PI / 4 + PI / 8) * r, sin(i) * r]), s) => {
   
   for (s of [-w, w]) face(A, P.map(([c, d]) => [s, c, d, .5 + d / r / 2, .5 - c / r / 2]), hb, o);
   P.map(([c, d], i, _, [e, f] = P[(i + 1) % 8]) => face(A, [[-w, c, d, 0, 0], [w, c, d, 1, 0], [w, e, f, 1, 1], [-w, e, f, 0, 1]], tr, o));
@@ -494,13 +494,13 @@ mv4 = (m, p, w) => [0, 1, 2, 3].map(j => m[j] * p[0] + m[j + 4] * p[1] + m[j + 8
 put = (A, S, m, s = 1, i) => {
   for (i = 0; i < S.length; i += 10) A.push(...mv4(m, S.slice(i, i + 3).map(v => v * s), 1).slice(0, 3), ...S.slice(i + 3, i + 7), ...mv4(m, S.slice(i + 7, i + 10), 0).slice(0, 3));
 },
-el = (h, r) => [-1, -.6, 0, .6, 1].flatMap((k, _, __, s = r * (1.05 - k * k) ** .5) => [k * h, s, s, s]),
+el = (h, r) => RR(...[-1, -.6, 0, .6, 1].flatMap(k => [k * h, r * (1.05 - k * k) ** .5])),
 // trees: tapered trunk + 3 overlapping ellipsoid lobes, 3 variants (size, green)
 TREE = [0, 1, 2].map(i => {
   let A = [];
   lathe(A, RR(0, .25, 3.4, .1), TL(10, gy(1), .1), 6);
-  for (let [x, y, z, r, h] of NC("J}kJ{2zqy}}#y_z]z>x-}8xBzgzH", 5)) // [0 4.4 0 2 1.7] [.9 3.7 .6 1.5 1.2] [-.8 3.9 -.6 1.6 1.3]
-    lathe(A, el(h, r + i * .2), TL(11, [.9 + i * .1, 1 + x * .1, .9]), 7, x, z, y + i * .3);
+  // [0 4.4 0 2 1.7] [.9 3.7 .6 1.5 1.2] [-.8 3.9 -.6 1.6 1.3]
+  NC("J}kJ{2zqy}}#y_z]z>x-}8xBzgzH", 5).map(([x, y, z, r, h]) => lathe(A, el(h, r + i * .2), TL(11, [.9 + i * .1, 1 + x * .1, .9]), 7, x, z, y + i * .3));
   return A;
 }),
 // palm (leans toward +X): 6 ringed trunk sections along a curve, 7 drooping double-sided fronds, 3 coconuts
@@ -524,8 +524,8 @@ dump = (x, z, A = CITY, u, v) => {
 // HP: hips -> mesh origin (the person meshes start .86 below the hips)
 HP = modelMat(0, -.86, 0, 0),
 person = (B, o, ph, v, md, g, lg) => {
-  let fm = 74 >> o & 1, X = fm ? .185 : .2, s = sin(ph), w = md ? 0 : min(v * 25, 1), r = md ? 0 : clamp(v * 11 - .7, 0, 1),
-    id = md ? 0 : sin(T / 900) * (1 - w), A = w * (.4 + .45 * r), j, F;
+  let fm = 74 >> o & 1, X = fm ? .185 : .2, s = sin(ph), w = md ? 0 : min(v * 25, 1), r = w && clamp(v * 11 - .7, 0, 1),
+    id = !md * sin(T / 900) * (1 - w), A = w * (.4 + .45 * r), j, F;
   // hips: bob (lowest with the legs spread), sway toward the stance leg, idle weight shift
   let Hp = mul(B, modelMat(s * w * (.025 + fm * .025) + id * .015, .86 + w * .035 * (abs(cos(ph)) - 1), 0, 0)),
     // torso pivots at the hips: breathing, counter-twist against the legs, run lean, sway roll
@@ -536,13 +536,11 @@ person = (B, o, ph, v, md, g, lg) => {
   for (j of [1, -1]) {
     let k = j < 0, q = ph + k * PI, sq = sin(q);
     // [thigh, knee, upper arm, elbow, arm roll (out)]
-    let [a, b, c, d, e] = md == 1 ? [.3 * sin(ph * 3 + j) - .1, -.25, -q, .35 + .35 * sq, j * .15]
-      : md == 2 ? [1.5 - v, v * .3 - 1.4, .9, .5, j * .1]
-      : md ? [.15, -.4, 0, .4, j * 1.3]
-      : [A * sq + r * .1, -w * (.1 + (.7 + .8 * r) * max(0, -sin(q - .6))) - .03, -A * .8 * sin(q - .25) + r * .1, .15 + w * .15 + r * 1.3, j * .06];
+    let [a, b, c, d, e] = [[A * sq + r * .1, -w * (.1 + (.7 + .8 * r) * max(0, -sin(q - .6))) - .03, -A * .8 * sin(q - .25) + r * .1, .15 + w * .15 + r * 1.3, j * .06],
+      [.3 * sin(ph * 3 + j) - .1, -.25, -q, .35 + .35 * sq, j * .15], [1.5 - v, v * .3 - 1.4, .9, .5, j * .1], [.15, -.4, 0, .4, j * 1.3]][md];
     if (g > 1) c = 1.2, d = .5;
     if (g == 1) k ? (c = 1.5, d = e = 0) : (c = 1.25, d = .5, e = -.5);
-    let U = mul(Hp, modelMat(j * .1, 0, 0, 0, a, md > 2 ? j * .25 : j < 0 && -lg || 0)), S = mul(Tq, modelMat(j * X, 1.36, 0, 0, c, e)), N = mul(U, modelMat(0, -.41, 0, 0, b));
+    let U = mul(Hp, modelMat(j * .1, 0, 0, 0, a, md > 2 ? j * .25 : -k * lg || 0)), S = mul(Tq, modelMat(j * X, 1.36, 0, 0, c, e)), N = mul(U, modelMat(0, -.41, 0, 0, b));
     F = mul(S, modelMat(0, -.28, 0, 0, d));
     dl(['qu', S, , o], ['qa', F, , o]);
     JT.push(tp(S), tp(F), tp(F, -.3), tp(N), tp(N, -.41));
@@ -562,10 +560,10 @@ quiet = (f, n = drawList.length) => { f(); drawList.length = n; },
 // ===== RAGDOLL =====
 // Verlet particles [x, y, z, old x, old y, old z] at the 12 joints of JT (0 pelvis, 1 head, 2-6 / 7-11 the +X / -X
 // side: shoulder, elbow, hand, knee, foot). Pelvis, head and shoulders form a rigid tetrahedron; limbs are
-// distance bones; CS: the bone pairs (2 letters each, a = 0), the last 3 only keep a minimum distance (knee off
+// distance bones; CS: the bone pairs (2 chars each, decoded by ci: space = 0), the last 3 only keep a minimum distance (knee off
 // the chest, knees apart). Rest lengths come from the pose at the takeover.
 JT, RQ = [],
-CS = 'abacahbcbhchcddeaffghiijakklcfhkfk', tp = (m, y = 0, z = 0) => mv4(m, [0, y, z], 1),
+CS = ` ! " (!"!("("$$% &&'())* ++,"&(+&+`, tp = (m, y = 0, z = 0) => mv4(m, [0, y, z], 1),
 // limb matrix: hanging along -Y from joint r toward joint c, X near the hint X, origin k below r along that axis
 seg = (r, c, X, k = 0, Y = nrm(sub(r, c)), Z = nrm(cross(X, Y))) => [...cross(Y, Z), 0, ...Y, 0, ...Z, 0, ...sub(r, Y.map(v => v * k)), 1],
 // torso matrix (mesh space, feet at the origin): Y hips -> mid shoulders, X toward the +X shoulder, Z forward
@@ -615,13 +613,12 @@ launch = (e, o, sp = -.7, B, i, j, p, s) => {
     quiet(() => B ? person(B, e.sn, 0, .5, 2) : pose(e));
     let R = e.R = JT.map(([x, y, z]) => [x, y, z, x, y, z]);
     R.C = [];
-    for (i = 0; i < 34;) { let a = ci(CS[i++]) - 62, b = ci(CS[i++]) - 62; R.C.push([a, b, hyp(...sub(R[a], R[b])) * (i > 28 ? .6 : 1), i > 28]); }
+    for (i = 0; i < 34;) { let a = ci(CS[i++]), b = ci(CS[i++]); R.C.push([a, b, hyp(...sub(R[a], R[b])) * (i > 28 ? .6 : 1), i > 28]); }
     // knees nudged forward so straight legs buckle
     let Z = frm(R);
     for (j of [5, 10]) for (i = 3; i--;) R[j][i + 3] -= Z[i + 8] * .03;
     RQ = RQ.filter(o => o.h == 1);
-    RQ.push(e);
-    if (RQ.length > 6) lay(RQ.shift());
+    RQ.push(e) > 6 && lay(RQ.shift());
   }
   // s: the impact capped (~65 km/h): faster hits throw as far, not further (GTA IV-like, not a cannon)
   let R = e.R, h = R[0][1];
@@ -640,7 +637,7 @@ skin = b => rnd() < .8 ? (b ? '1356' : '2782')[rnd() * 4 | 0] : '12356789'[rnd()
 // city road: x = 258, 510, ... going north / south, z = ..., -246, 6, 258, 510, ... going east), a village sits at
 // some crossroads. The city rect (x < 390, -112 < z < 390) and the coast (x < 9) have no cell content.
 hs = (a, b) => abs(sin(a * 127.1 + b * 311.7) * 4e4) % 1,
-RX = i => i % 2 == 0 && i > 0, RZ = j => j % 2 == 0,
+RX = i => i > 0 && 1 & ~i, RZ = j => 1 & ~j,
 // the 14 m cell centered at x, z lies fully outside the city rect
 oc = (x, z) => x > 397 || z > 397 || -119 > z,
 // cell content: 0, or the obstacle [width, depth, height, x, z, kind] (kind 0 tree, 1 house, 3 fence)
@@ -663,7 +660,7 @@ mkC = (i, j, A = [], gx, gz, a, s) => {
     if (gx == 2) box(A, -30, .02, z, 36, 0, 16, TL(8)), box(A, -6, .02, z, 12, 0, 16, TL(6));
     x > 9 && box(A, x, .01, z, 14, 0, 14, TL(7, t)); // grass (or a field) on every cell: the hills need the ground
     for (a of [0, 1]) if (x > 0 && !(((a ? gz : gx) - 4) % 9) && (a ? RZ(j) : RX(i))) {
-      box(A, x, .04, z, a ? 16 : 12, 0, a ? 12 : 16, TL(6));
+      box(A, x, .04, z, 12 + a * 4, 0, 16 - a * 4, TL(6));
       for (s of [-3.5, 3.5]) box(A, x + a * s, .06, z + !a * s, a ? 3 : .3, 0, a ? .3 : 3, LY);
     }
     if (q) {
@@ -696,11 +693,11 @@ upTex = () => {
   if (!gl || !CV) return;
   TX = gl.createTexture();
   // no flip / premultiply (Phaser changes them), NEAREST, CLAMP_TO_EDGE, no mipmaps
-  withTex((S = [37440, 37441], v = S.map(gp), q) => {
-    S.map(k => gl.pixelStorei(k, 0));
+  withTex((S = [37440, 37441], v = S.map(gp), q, p = f => S.map((k, i) => gl.pixelStorei(k, f[i]))) => {
+    p([0, 0]);
     gl.texImage2D(3553, 0, 6408, 6408, 5121, CV);
-    S.map((k, i) => gl.pixelStorei(k, v[i]));
-    for (q of [10240, 10241, 10242, 10243]) gl.texParameteri(3553, q, q < 10242 ? 9728 : 33071);
+    p(v);
+    for (q = 10244; q-- > 10240;) gl.texParameteri(3553, q, q < 10242 ? 9728 : 33071);
   });
 },
 mkMesh = (a, b = gl.createBuffer()) => (gl.bindBuffer(34962, b), gl.bufferData(34962, new Float32Array(a), 35044), [b, a.length / 10]),
@@ -708,7 +705,7 @@ initGL = (g, t, s, i, k) => {
   // loop variables
   gl = g;
   prog = gl.createProgram();
-  for ([t, s] of [[35633, ('attribute vec3 p,n;attribute vec4 c;uniform mat4 v,m;' + VY + 'void main(){vec4 w=m*vec4(p,1);W=w.xyz;N=(m*vec4(n,0)).xyz;C=c;gl_Position=v*w;}')], [35632, ('precision highp float;' + VY + 'uniform vec3 f,e;uniform float g,o;uniform sampler2D t;void main(){float a=C.a;if(abs(abs(a)-2.)<.5!=g>.5)discard;vec3 n=normalize(N),c=C.rgb;vec2 q=vec2(C.r+o,C.g);if(a>3.)q=fract((abs(n.y)>.5?W.xz/2.:vec2(abs(n.x)>abs(n.z)?-W.z*sign(n.x):W.x*sign(n.z),-W.y)/vec2(3,3.4))*fract(a)*10.)*15.+vec2(floor(a-3.)*16.+.5,32.5);if(a<0.||a>3.){vec4 k=texture2D(t,q/vec2(1280,48));if(k.a<.5)discard;c=(a<0.?vec3(1):c)*k.rgb;}c*=.62+.48*max(dot(n,vec3(.42,.8,.43)),0.)+.08*n.y;gl_FragColor=vec4(mix(c,f,min(max(distance(W,e)-90.,0.)/420.,.82)),1)*(1.-g*.65);}')]]) { let o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); gl.attachShader(prog, o); }
+  [('attribute vec3 p,n;attribute vec4 c;uniform mat4 v,m;' + VY + 'void main(){vec4 w=m*vec4(p,1);W=w.xyz;N=(m*vec4(n,0)).xyz;C=c;gl_Position=v*w;}'), ('precision highp float;' + VY + 'uniform vec3 f,e;uniform float g,o;uniform sampler2D t;void main(){float a=C.a;if(abs(abs(a)-2.)<.5!=g>.5)discard;vec3 n=normalize(N),c=C.rgb;vec2 q=vec2(C.r+o,C.g);if(a>3.)q=fract((abs(n.y)>.5?W.xz/2.:vec2(abs(n.x)>abs(n.z)?-W.z*sign(n.x):W.x*sign(n.z),-W.y)/vec2(3,3.4))*fract(a)*10.)*15.+vec2(floor(a-3.)*16.+.5,32.5);if(a<0.||a>3.){vec4 k=texture2D(t,q/vec2(1280,48));if(k.a<.5)discard;c=(a<0.?vec3(1):c)*k.rgb;}c*=.62+.48*max(dot(n,vec3(.42,.8,.43)),0.)+.08*n.y;gl_FragColor=vec4(mix(c,f,min(max(distance(W,e)-90.,0.)/420.,.82)),1)*(1.-g*.65);}')].map((s, i, _, o = gl.createShader(35633 - i)) => { gl.shaderSource(o, s); gl.compileShader(o); gl.attachShader(prog, o); });
   // attribute locations fixed: p 0, c 1, n 2
   [...'pcn'].map((k, i) => gl.bindAttribLocation(prog, i, k));
   gl.linkProgram(prog);
@@ -718,8 +715,8 @@ initGL = (g, t, s, i, k) => {
   if (!CG) {
     CG = {};
     for (i = 0; i < CITY.length; i += 30) {
-      t = CITY.slice(i, i + 30); let X = [t[0], t[10], t[20]], Z = [t[2], t[12], t[22]];
-      (CG[max(...X) - min(...X) > 50 || max(...Z) - min(...Z) > 50 ? 0 : (X[0] + 500) / 84 << 5 | (Z[0] + 500) / 84] ||= []).push(...t);
+      t = CITY.slice(i, i + 30); let s = o => max(t[o], t[o + 10], t[o + 20]) - min(t[o], t[o + 10], t[o + 20]) > 50;
+      (CG[s(0) || s(2) ? 0 : (t[0] + 500) / 84 << 5 | (t[2] + 500) / 84] ||= []).push(...t);
     }
   }
   CH = Object.values(CG).map((a, _, __, L = [0, 1, 2].map(j => a.filter((v, i) => i % 10 == j)), lo = L.map(v => min(...v)), hi = L.map(v => max(...v))) =>
@@ -731,7 +728,7 @@ initGL = (g, t, s, i, k) => {
 // o: skin index (atlas cell) for textured people
 drawMesh = (ms, m, o) => {
   gl.bindBuffer(34962, ms[0]);
-  [3, 4, 3].map((n, a) => gl.vertexAttribPointer(a, n, 5126, 0, 40, a * 12 + (a > 1) * 4));
+  [3, 4, 3].map((n, a) => gl.vertexAttribPointer(a, n, 5126, 0, 40, a * (a + 5) * 2));
   gl.uniformMatrix4fv(uM, 0, m);
   gl.uniform1f(uO, o * 32 || 0);
   gl.drawArrays(4, 0, ms[1]);
@@ -745,32 +742,32 @@ drawList,
 // noise impulse, 30 % send). The lab's bitcrush (dirt) bus is cut for size.
 // Loops: aE engine, aK skid, aS siren, aR scrape. aG gear, aT last throttle, aU throttle cut end time.
 aO, aD, aZ, aV = 0, aE, aG, aT, aU, aK, aS, aR, aQ,
-WV = 'sine square sawtooth triangle'.split(' '), FQ = 'frequency',
+WV = [, 'sine', 'square', 'sawtooth', 'triangle'], FQ = 'frequency',
 aNow = () => AC.currentTime,
 // p jumps to a at time t, then glides exponentially to b at time e
-aRamp = (p, a, b, t, e) => (p.setValueAtTime(a, t), p.exponentialRampToValueAtTime(b, e)),
+aRamp = (p, a, b, t, e) => p.setValueAtTime(a, t).exponentialRampToValueAtTime(b, e),
 aCh = (...n) => n.reduce((a, b) => a.connect(b)),
-aGn = (v = 0, g = AC.createGain()) => (g.gain.value = v, g),
+aGn = (gain = 0) => new GainNode(AC, { gain }),
 // waveshaper tanh(k x + .4) - tanh(.4) (asymmetric: even + odd harmonics, exact 0 at rest)
-aSh = (k, s = AC.createWaveShaper(), t = M.tanh) => (s.curve = new Float32Array(513).map((_, i) => t(k * (i / 256 - 1) + .4) - t(.4)), s),
+aSh = (k, t = M.tanh) => new WaveShaperNode(AC, { curve: new Float32Array(513).map((_, i) => t(k * (i / 256 - 1) + .4) - t(.4)) }),
 // fill channel c of buffer b with noise decaying as (1 - t)^e (e 0: plain white noise)
 aFill = (b, c, e) => b.getChannelData(c).forEach((_, i, d) => d[i] = rs() * 2 * (1 - i / d.length) ** e),
 // on every key press (browsers only start audio after a user gesture)
 audioInit = () => {
   if (AC) return AC.resume();
   AC = new AudioContext();
-  let r = AC.sampleRate, c = AC.createDynamicsCompressor(), v = AC.createConvolver(), b = AC.createBuffer(2, r * .9, r);
-  c.threshold.value = -12; c.knee.value = 6; c.ratio.value = 10; // safety limiter: only peaks over -12 dB
-  aCh(aO = aGn(.8), c, AC.destination);
+  let r = AC.sampleRate, b = AC.createBuffer(2, r * .9, r);
+  // safety limiter: only peaks over -12 dB
+  aCh(aO = aGn(.8), new DynamicsCompressorNode(AC, { threshold: -12, knee: 6, ratio: 10 }), AC.destination);
   aCh(aD = aSh(4), aO);
   aFill(b, 0, 4); aFill(b, 1, 4);
-  v.buffer = b; aCh(aD, aGn(.3), v, aO);
+  aCh(aD, aGn(.3), new ConvolverNode(AC, { buffer: b }), aO);
   aFill(aZ = AC.createBuffer(1, r * 2, r), 0, 0);
 },
 // source: w 0 = noise (shared buffer, looped), 1..4 = sine square sawtooth triangle
-aSrc = (w, s = w ? AC.createOscillator() : AC.createBufferSource()) => (w ? s.type = WV[w - 1] : (s.buffer = aZ, s.loop = 1), s),
-aFlt = (t, q, c, f = AC.createBiquadFilter()) => (f.type = ('lowpass highpass bandpass'.split(' '))[t], f.Q.value = q, f[FQ].value = c, f),
-aPan = (p, o = aO, n = AC.createStereoPanner()) => (n.pan.value = p, n.connect(o), n),
+aSrc = w => w ? new OscillatorNode(AC, { type: WV[w] }) : new AudioBufferSourceNode(AC, { buffer: aZ, loop: 1 }),
+aFlt = (t, Q, frequency) => new BiquadFilterNode(AC, { type: ['low', 'high', 'band'][t] + 'pass', Q, frequency }),
+aPan = (pan, o = aO, n = new StereoPannerNode(AC, { pan })) => (n.connect(o), n),
 // [volume, pan] of world point x, z heard from the camera (screen right = -X when looking along cam.w)
 spatial = (x, z, dx = x - cam.e[0], dz = z - cam.e[2], d = hyp(dx, dz)) => [1 / (1 + d * d / 400), -sin(at2(dx, dz) - cam.w) * min(1, d / 6)],
 // continuous voice: source w -> [inserts] -> filter (type t, Q q, cutoff c) -> gain (starts silent) -> panner;
@@ -788,22 +785,17 @@ aPops = (n, v) => play([...Array(n)].map((_, i) => [0, , , .05, 1, i * .07 + rnd
 // once per frame (only with AC): e preset, v speed 0..1, th throttle 0..1, on 0 mutes (on foot, game over)
 engine = (e, v, th, on, [w, h0, hs, sm, nm, nb, G, c0, cr, vol, dr, jt, , ct, , it] = SX(`$$?WYd&D[CiB!Y![ $*FP^i'MbBn?!_!_ #(=S]a"FVAk@!R!W $-3U]l"KUBg:!U!W`)[e]) => {
   
-  if (!aE) {
-    // saw (firing pulses) + square at half order -> lowpass -> drive gain -> tanh shaper -> out (+ bitcrush bus);
-    // exhaust noise -> bandpass whose gain is chopped by the saw (one burst per firing); intake hiss
-    let o = aSrc(3), s = aSrc(2), sg = aGn(), f = aFlt(0, 2, 500), dg = aGn(), g = aGn(), n = aLp(0, 2, 1.5, 500), am = aGn();
-    o.connect(f); aCh(s, sg, f, dg, aSh(5), g, aO);
-    aCh(o, am, n[2]); o.start(); s.start();
-    aE = [o, s, sg, f, dg, g, n, am, aLp(0, 2, .8, 2e3)];
-  }
-  let [o, s, sg, f, dg, g, n, am, ik] = aE, x = min(v, .999) * G, gr = x | 0, V = on * vol;
+  // saw (firing pulses) + square at half order -> lowpass -> drive gain -> tanh shaper -> out;
+  // exhaust noise -> bandpass whose gain is chopped by the saw (one burst per firing); intake hiss. aE[9]: wired
+  let [o, s, sg, f, dg, g, n, am, ik] = aE ||= [aSrc(3), aSrc(2), aGn(), aFlt(0, 2, 500), aGn(), aGn(), aLp(0, 2, 1.5, 500), aGn(), aLp(0, 2, .8, 2e3)], x = min(v, .999) * G, gr = x | 0, V = on * vol;
+  aE[9] ||= (o.connect(f), aCh(o, am, n[2]), o.start(), s.start(), aCh(s, sg, f, dg, aSh(5), g, aO));
   // gearbox: rpm climbs through each gear and falls back to ~half after an upshift
   let r = max(G > 1 ? gr ? .45 + .55 * (x - gr) : .15 + .85 * x : .15 + .85 * v, .15 + th * .25);
   if (gr > aG) aU = aNow() + .15, aPops(3, V * 1.5); // upshift: 150 ms throttle cut + exhaust bark
   aG = gr;
   // jittered firing: random per-frame pitch / level wobble, strongest at idle off throttle (lumpy idle)
   let T = aNow() < aU ? 0 : th, u = rs() * jt * (1.2 - T), hz = (h0 + hs * r) * (1 + u);
-  o.type = WV[w - 1];
+  o.type = WV[w];
   aSet(o[FQ], hz, .015); aSet(s[FQ], hz / 2, .015);
   aSet(f[FQ], c0 + cr * r + ct * T);
   aSet(sg.gain, sm * (1.3 - T), .1);
@@ -813,8 +805,7 @@ engine = (e, v, th, on, [w, h0, hs, sm, nm, nb, G, c0, cr, vol, dr, jt, , ct, , 
   aSet(n[2], V * nm * (.4 + .6 * T), .06); aSet(am.gain, V * nm * .9, .06);
   aSet(ik[1], 1200 + 2e3 * r); aSet(ik[2], V * it * T * r);
   // lift-off at high rpm -> burst of pops; coasting -> crackle
-  if (V && aT - th > .5 && r > .4) aPops(3 + rnd() * 5 | 0, V * 1.3);
-  else if (V && th < .1 && r > .4 && rnd() < .06) aPops(1, V);
+  if (V && r > .4) aT - th > .5 ? aPops(3 + rnd() * 5 | 0, V * 1.3) : th < .1 && rnd() < .06 && aPops(1, V);
   aT = th;
 },
 // crash: sub thud, low-mid body, clipped crunch, 4 inharmonic metal resonances, debris (x 1)
@@ -834,7 +825,7 @@ glass = (v = 1, p) => play([...SX('!IICX!"io !IIKO0"m'), ...[...Array(14)].map((
 // vehicle entity: model m at x, z heading a, e: empty (parked). c: 0 car, 1 bike, 2 boat; l / w half length / width
 // o: atlas cell (j: source index): police 14, bus 12; sedans, convertibles and bikes: the original paint or one
 // of the 7 recolored variants built in the atlas canvas (cells 15 + source * 7 + color)
-veh = (m, x, z, a, e, c = m == 'mo' ? 1 : m == 'bo' ? 2 : 0, b = m == 'bu', q = m == 'pc', j = 'sdcvmo'.indexOf(m) / 2) => ({ m, x, z, a, t: a, s: 0, st: 0, y: 0, U: 0, ai: 0, rl: e && c == 1 ? .15 : 0, dr: 0, l: b ? 5 : [2.15, .95, 2.2][c], w: b ? 1.25 : [.95, .35, .9][c], e, c, h: 0, r: 0, q, b: 0, hp: q ? 160 : b ? 220 : 100, dm: q ? 9 : skin(c > 1), o: j < 0 ? m == 'pc' ? 14 : 12 : rnd() < .25 ? [10, 11, 13][j] : 15 + j * 7 + (rnd() * 7 | 0) }),
+veh = (m, x, z, a, e, j = 'sdcvmo'.indexOf(m) / 2, c = m == 'bo' ? 2 : +(j > 1), b = m == 'bu', q = m == 'pc') => ({ m, x, z, a, t: a, s: 0, st: 0, y: 0, U: 0, ai: 0, rl: e && j > 1 ? .15 : 0, dr: 0, l: b ? 5 : [2.15, .95, 2.2][c], w: b ? 1.25 : [.95, .35, .9][c], e, c, h: 0, r: 0, q, b: 0, hp: q ? 160 : b ? 220 : 100, dm: q ? 9 : skin(c > 1), o: j < 0 ? q ? 14 : 12 : rnd() < .25 ? [10, 11, 13][j] : 15 + j * 7 + (rnd() * 7 | 0) }),
  // (state below without an initial value is set by restart())
 // crash: SUCIO crunch (light bump: first 3 layers; hard: everything + glass) + a small camera kick
 crash = i => {
@@ -847,11 +838,7 @@ lcl = (o, x, z, s = sin(o.a), c = cos(o.a), rx = x - o.x, rz = z - o.z) => [rx *
 // e: the vehicle (c: 0 car, 1 bike, 2 boat). Boats need open water; the player's car may roll into the sea (sinks).
 carBlocked = (x, z, a, e = car, o = { x, z, a }, w = e.w - .05, l = e.l - .05) => {
   
-  for (let [u, v] of [[-w, -l], [w, -l], [-w, l], [w, l], [0, e.l], [0, -e.l]]) {
-    let [px, pz] = loc(o, v, u);
-    if (e.c > 1 ? !wet(px, pz) : (e == car ? fs : solid)(px, pz)) return 1;
-  }
-  return 0;
+  return [[-w, -l], [w, -l], [-w, l], [w, l], [0, e.l], [0, -e.l]].some(([u, v], _, __, [px, pz] = loc(o, v, u)) => e.c > 1 ? !wet(px, pz) : (e == car ? fs : solid)(px, pz));
 },
 updateCar = k => {
   let gas = held('U'), brake = held('D'), hand = held(2), sd, na, slip, nx, nz, impact;
