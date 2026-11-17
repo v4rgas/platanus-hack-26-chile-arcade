@@ -387,6 +387,15 @@ buildCity = () => {
   // ===== BUILDING DETAIL =====
   // body (windows), plinth, cornice + parapet with a dark roof inside; low buildings get chamfered corners.
   // Taller ones get floor ledges or balcony columns; street-level awnings; roof water tank / AC units / antenna.
+  // the "shoe shop" (the strip club meme), beach avenue: dark facade, pink neon high heel (outline) over a pink door.
+  // Neon strips [z, y, Z, Y, t] on the facade (x 14.7): from (z, y) to (Z, Y), t thick, drawn from both sides:
+  // sole (ball, arch), toe, vamp, collar, heel spike, back
+  for (b of BL) if (b[1] == 153 && b[0] < 30) {
+    b[5] = [.3, .12, .32];
+    let N = [1.6, .35, 1.2];
+    NC("vo_wwTawwTzHzgavo_wcyxawcyxJz)aJz)zR{<az4TzJTzgzCzgzYzgyi", 5).map(([z, y, Z, Y, t]) => { for (o of [0, 30]) quad(A, ...[[z, y], [z, y + t], [Z, Y + t], [Z, Y]].map(([z, y]) => [14.7, 5 + y * 1.4, 153 + z * 1.4]), N, [o, 6, 153]); });
+    cb(14.9, 0, 153, .2, 2.6, 1.6, N); // door
+  }
   for ([x, z, w, d, h, col, rf, ro, sx, sz] of BL) {
     let dk = col.map(v => v * .75), lt = col.map(v => min(1, v * 1.15)), low = h < 16, r = rnd();
     let B = (y, hh, g, c) => (low ? chamf : box)(A, x, y, z, w + g, hh, d + g, c);
@@ -597,7 +606,7 @@ updRag = (R, k, p, i, it, a, b, l, n, j, s) => {
     for (p of R) {
       // damped Verlet step + gravity; a step into a wall cell is undone per axis
       for (i = 0; i < 3; i++) { let v = (p[i] - p[i + 3]) * .99; p[i + 3] = p[i]; p[i] += v - (i == 1) * .006; }
-      if (solid(p[0], p[2])) p[0] = p[3], p[2] = p[5];
+      if (fs(p[0], p[2])) p[0] = p[3], p[2] = p[5]; // fs: the sea is open (bodies fly into the water), walls stop
       // ground (radius .1; 0 at sea: floats on the surface): no bounce, friction eats 15% of the sliding speed per frame
       let g = gh(p[0], p[2]) + .1;
       if (p[1] < g) p[1] = p[4] = g, p[3] += (p[0] - p[3]) * .15, p[5] += (p[2] - p[5]) * .15;
@@ -986,7 +995,8 @@ updateCar = k => {
   // bikes (c 1): faster, quicker accel, tighter turns, big lean. Boats (c 2): low traction (slides).
   let steerIn = ax('L', 'R'), bus = car.m == 'bu', bk = car.c == 1, mx = bus ? .42 : bk ? .713 : .62;
   car.st = toward(car.st, steerIn, .1 * k);
-  if (gas) car.s += .009 * k * (car.s < 0 ? 3 : bk ? 1.5 : 1);
+  // accel tapers with speed (0-100 km/h: car ~1.8 s, bike ~1.2 s); strong when gassing out of a reverse roll
+  if (gas) car.s += .005 * k * (car.s < 0 ? 3 : bk ? 1.3 : 1) * (1.6 - max(car.s, 0) / mx);
   if (brake) car.s -= (car.s > .01 ? .02 : .0063) * k;
   sd = car.x < -12; // sand (west of the seaside avenue): a bit more drag, much less traction (only these two factors change)
   car.s = clamp(car.s, -.2, mx) * ((hand ? .985 : gas ? .995 : .988) * (sd ? .994 : 1)) ** k;
@@ -1587,6 +1597,7 @@ drawMap = (c = cos(cam.w), s = sin(cam.w), x = F.x - 140, z = F.z - 139, f = max
   // planes: yellow arrow with a wing bar
   for (q of PL) if (q != F) { let [x, y] = mp(q.x, q.z), u = cos(q.a) * 4, v = -sin(q.a) * 4; arrow(q, 0xffee00, 3); mm.lineStyle(2, 0xffee00).lineBetween(x - u, y - v, x + u, y + v); }
   for (e of ENT) if (e != F && !e.k) e.c > 1 ? arrow(e, 0x80e0ff, 2.5) : (e.q || e.e) && mm.fillStyle(e.q ? T / 150 & 1 ? 0xff2020 : 0x3050ff : 0xffffff).fillRect(...mp(e.x, e.z).map(v => v - 1.5), 3, 3);
+  mm.fillStyle(0xff4fc8).lineStyle(1, 0xffffff).fillCircle(...mp(15, 153), 3.5).strokeCircle(...mp(15, 153), 3.5); // the shoe shop
   arrow(F, 0xffee00, 3.5); // the player
 };
 new Phaser.Game({
