@@ -22,7 +22,7 @@ cam = { f: 1, sh: 0 }, // e, w: set by restart(), t: by updateCam
 // H sinking (player car in the sea).
 ENT = [],
 DX = [0, 1, 0, -1], DZ = [1, 0, -1, 0], // direction d -> forward; right of d is (-DZ, DX)
-ply = { k: 1, sn: 4, ph: 0, u: 1 },
+ply = { k: 1, sn: 4, ph: 0, u: 1 }, RM = [],
 // hoisted helper functions (defined up front; nothing below calls them before their dependencies exist)
 held = b => bt(HELD, b), // boolean
 clamp = (v, a, b) => v < a ? a : v > b ? b : v,
@@ -389,14 +389,32 @@ buildCity = () => {
     b[5] = [.3, .12, .32];
     let N = [1.6, .35, 1.2];
     NC("vo_wwTawwTzHzgavo_wcyxawcyxJz)aJz)zR{<az4TzJTzgzCzgzYzgyi", 5).map(([z, y, Z, Y, t]) => { for (o of [0, 30]) quad(A, ...[[z, y], [z, y + t], [Z, Y + t], [Z, Y]].map(([z, y]) => [14.7, 5 + y * 1.4, 153 + z * 1.4]), N, [o, 6, 153]); });
-    cb(14.9, 0, 153, .2, 2.6, 1.6, N); // door
   }
   for ([x, z, w, d, h, col, rf, ro, sx, sz] of BL) {
     let dk = col.map(v => v * .75), lt = col.map(v => min(1, v * 1.15)), low = h < 16, r = rnd();
-    let B = (y, hh, g, c) => (low ? chamf : box)(A, x, y, z, w + g, hh, d + g, c);
+    let B = (y, hh, g, c, Q = A) => (low ? chamf : box)(Q, x, y, z, w + g, hh, d + g, c), G = [];
     // shopfront floor, facade tiles above (office glass on the tallest), low plinth, metal cornice, roof
     let tn = col.map(v => v * 1.15);
-    B(0, 3.4, 0, TL(2, tn));
+    B(0, 3.4, 0, TL(2, tn), G);
+    // ===== INTERIORS =====
+    // Rule: the club (the shoe shop) and ~1 in 7 low buildings get a hollow front room on their x street side
+    // (facade f, room center rx): the shopfront's street face is left out, an inside-out box (rewound triangles,
+    // flipped normals: seen only from inside, culling hides the outer walls), two wall pieces + a lintel framing a
+    // 4 m opening, neon bands. Club: stage + pole (the dancer is drawn in updateWorld); others: a bar counter.
+    // RM: [crowd target x, z, facade direction, club] (crowds: updateWorld).
+    let cu = x == 21 && z == 153, op = low && (cu || r > .86), f = x + sx * w / 2, rx = f - sx * 6, R = [];
+    for (i = 0; i < G.length; i += 30) if (!op || G[i + 7] * sx < .9) A.push(...G.slice(i, i + 30));
+    if (op) {
+      box(R, rx, .19, z, 11.4, 3.1, 11.4, TL(6, col.map(v => v * .5)));
+      for (i = 0; i < R.length; i += 30) for (j of [0, 20, 10]) A.push(...R.slice(i + j, i + j + 7), ...R.slice(i + j + 7, i + j + 10).map(v => -v));
+      mark(rx, z, 10, 10, 0); mark(f, z, 1, 4, 0);
+      for (j of [-1, 1]) cb(f - sx * .1, 0, z + j * (d / 4 + .5), .4, 3.4, d / 2 - 3, TL(2, tn)), cb(rx - sx, 2.8, z + j * 5.6, 9.4, .1, .05, cu ? [1.6, .35, 1.2] : [.3, .6, 1]);
+      cb(f - sx * .1, 2.6, z, .4, .8, 4, TL(2, tn));
+      t = rx - sx * (cu ? 3 : 4);
+      if (cu) cm(t, z, 5, .5, 5, [.5, .1, .35], 1), cl(RR(.5, .05, 3.3, .05), gy(.9), 6, t, z);
+      else cm(t, z, 1, 1.1, 8, [.35, .2, .12]);
+      RM.push([t, z, sx, cu]);
+    }
     B(3.4, h - 3.4, 0, TL(h > 40 ? 1 : 0, tn));
     B(0, .4, .3, TL(3, dk));
     B(h - .5, 1, .5, TL(19, lt));
@@ -1042,7 +1060,7 @@ updPed = (e, k, R) => {
   if (car.s > .15 && ah > 0 && ah < 16 && abs(rx * vz - rz * vx) < 5) { e.f = 40; e.Y = at2(rx - ah * vx, rz - ah * vz); }
   if (e.f > 0) { e.f -= k; sp = .1; ta = e.Y; e.p = e.I = e.S = 0; }
   // idle: sunbather (lying, p), bather standing in the water, group, bench (S); walks on after ~1 min on average
-  else if (e.I) sp = 0, ta = e.a, rnd() < 3e-4 * k && (e.p = e.I = e.S = 0);
+  else if (e.I) sp = 0, ta = e.a, rnd() < 3e-4 * k / e.I && (e.p = e.I = e.S = 0);
   else {
     [x, z] = corner(e, e.c);
     ta = at2(x - e.x, z - e.z);
@@ -1083,6 +1101,13 @@ fly = (o, k, g) => { o.U -= g * k; o.x += o.J * k; o.y += o.U * k; o.z += o.K * 
 updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d, imp, RA, B, v, R, X) => {
   // camera ground position (people / drivers culled beyond 70 m)
   populate(60, 40);
+  // room crowds: real pedestrians (idle for good: I huge) in two arcs facing the stage / counter (club 12, bar 5 +
+  // the bartender behind the counter, j = -1), spawned within 60 m when none of the room's (e.rm) are left
+  for (o of RM) if (dst({ x: o[0], z: o[1] }) < 60 && !ENT.some(e => e.rm == o)) for (j = o[3] ? 11 : 4; j >= -!o[3]; j--) {
+    e = mkPed(0, o[0], o[1]); x = j < 0 ? -1 : o[3] ? 3.3 + (j & 1) * 1.5 : 1.3 + (j & 1); d = (j / (o[3] ? 11 : 4) - .5) * 2.6;
+    e.x = o[0] + o[2] * x * cos(d); e.z = o[1] + x * sin(d); e.a = at2(o[0] - e.x, o[1] - e.z); e.I = 1e9; e.rm = o;
+    ENT.push(e);
+  }
   for (n = ENT.length; n--;) {
     e = ENT[n];
     if (e == car || e == ply) continue;
@@ -1118,6 +1143,11 @@ updateWorld = (k, CE = { x: cam.e[0], z: cam.e[2] }, n, e, o, z, x, i, j, d, imp
   }
   // draw entities in view (vis); people (~9 draws each) are skipped beyond 70 m from the camera (deep in the fog, a
   // few pixels tall)
+  // club: the dancer circles the pole (hip sway)
+  if (dst({ x: 24, z: 153 }, CE) < 40) {
+    d = T / 1200;
+    person(modelMat(24 + .6 * sin(d), .68, 153 + .6 * cos(d), d + H2, 0, sin(T / 230) * .15), 6, T / 160, .012, 0, sin(T / 900) > 0 ? 2 : 0);
+  }
   for (e of ENT) if (e.k) {
     if (dst(e, CE) > 70 || !vis(e.x, e.z)) continue;
     // ragdoll (h): the person meshes between its joints (X: torso frame), RA ends as the -X forearm (uzi)
