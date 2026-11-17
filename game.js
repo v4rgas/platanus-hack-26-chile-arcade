@@ -575,9 +575,8 @@ updRag = (R, k, p, i, it, a, b, l, n, j, s) => {
   for (R.A = (R.A || 0) + k; R.A >= 1; R.A--) {
     R.M = 0;
     for (p of R) {
-      // damped Verlet step + gravity; a step into a wall cell is undone per axis
+      // damped Verlet step + gravity
       for (i = 3; i--;) { let v = (p[i] - p[i + 3]) * .985; p[i + 3] = p[i]; p[i] += v - (i == 1) * .006; }
-      if (fs(p[0], p[2]) && !fs(p[3], p[5])) p[0] = p[3], p[2] = p[5]; // (a joint already inside may get out) // fs: the sea is open (bodies fly into the water), walls stop
       // ground (radius .1; 0 at sea: floats on the surface): no bounce, friction eats 15% of the sliding speed per frame
       let g = gh(p[0], p[2]) + .1;
       if (p[1] < g) p[1] = p[4] = g, p[3] += (p[0] - p[3]) * .15, p[5] += (p[2] - p[5]) * .15;
@@ -591,14 +590,20 @@ updRag = (R, k, p, i, it, a, b, l, n, j, s) => {
         let P = R[a], Q = R[b], D = sub(Q, P), d = hyp(...D) || .01, f = (d - l) / d / 2;
         if (!n || d < l) for (i = 3; i--;) P[i] += D[i] * f, Q[i] -= D[i] * f;
       }
-      // hinges: knees only bend backward, elbows forward. Wrong side of the root-mid-end plane -> push the
-      // middle joint along the body's Z
+      // hinges: knees only bend backward, elbows forward. q: the bend around the body's X, linear in the middle
+      // joint with gradient g = (end - root) x X; on the wrong side the joint moves along g to q = 0 (the + .1 bounds
+      // the step when the limb lies along X). A fixed push along the body's Z diverged with the limb raised past
+      // 90 degrees (mid-stride launches): the body thrashed and dug into walls
       let T = frm(R);
       for (j of [0, 5]) for (s of [1, -1]) {
-        let m = R[j + 4 + s], q = dot(cross(sub(m, R[s > 0 ? 0 : j + 2]), sub(R[j + 5 + s], m)), T);
-        if (s * q < 0) for (i = 3; i--;) m[i] -= T[i + 8] * q;
+        let m = R[j + 4 + s], r = R[s > 0 ? 0 : j + 2], e = R[j + 5 + s], q = dot(cross(sub(m, r), sub(e, m)), T), g = cross(sub(e, r), T);
+        if (s * q < 0) for (i = 3; i--;) m[i] -= g[i] * q / (dot(g, g) + .1);
       }
     }
+    // walls: a joint that ends a step in a wall cell goes back to its last free spot (X, Z), after the constraints, so
+    // no joint (nor the pelvis the person gets up at) rests inside a wall; fs: the sea is open (bodies fly into the
+    // water); a joint that starts inside one is free until it gets out
+    for (p of R) fs(p[0], p[2]) ? p.X && (p[0] = p.X, p[2] = p.Z) : (p.X = p[0], p.Z = p[2]);
   }
   return R.M;
 },
