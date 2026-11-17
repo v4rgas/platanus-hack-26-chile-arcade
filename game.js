@@ -675,7 +675,6 @@ NC("JnuvTzHz)J_uq|NRy}J@zHyTz)zRy}wcy_ay_y_x#wcy_ay_y_Jwc{o]yTyTJ>|XooyJJwmJZ{FP
 // windsock (red / white bands, the plane atlas' spare cell; along +Y, laid forward when drawn) and the tower radar
 // (post + dish panel, tilted when drawn)
 lathe(MODELS.ws = [], RR(0, .3, 2, .12), all(RC(15)), 6);
-bl(MODELS.rd = [], "JJJJ_yi_KJyTT{ZyiT", DK, gy(.8)); // post [0 0 0 .2 .7 .2], dish [0 .5 .1 2.4 .7 .1]
 // explosion debris (orange / gray)
 box(MODELS.xo = [], 0, -1, 0, 2, 2, 2, [1, .55, .1]);
 box(MODELS.xg = [], 0, -.6, 0, 1.2, 1.2, 1.2, gy(.3));
@@ -1005,7 +1004,6 @@ const S_SPLASH = SX('!IIXY!!g? !IIOW!#RD[ "GWBO@ "K[?LG "ETCKL');
 // wanted star up: square stab + low saw through the drive bus (growls)
 const S_STAR = SX('#EEMI!!ZOd #JJSIG!]Od $<<UKG!MD');
 // car horn: two detuned squares (~400 + 500 Hz), lowpassed
-const S_HONK = SX('#HHPI!![ #KKPI!![');
 // glass (brittle): sharp high-passed crack + 14 short shards (2.5-10 kHz, 20-120 ms) over 200 ms
 const glass = (v = 1, p) => play([...SX('!IICX!"io !IIKO0"m'), ...[...Array(14)].map(() => {
   const f = 2500 + rnd() * 7500;
@@ -1193,17 +1191,14 @@ const updTraffic = (e, k) => {
   if (!e.g && inC(e.i, e.j) && light(e.i, e.j, d & 1) > 4.5) want = min(want, (dist - 4) * .04);
   // keep distance from cars ahead going the same way (and always from the player / knocked cars). A stopped
   // obstacle (empty car, wreck, dead driver) is passed on the other lane: creep while swerving around it.
-  // People on the road (crossing, fleeing, the player) are waited for. hk: frames held up by the player -> honk
-  let hb;
+  // People on the road (crossing, fleeing, the player) are waited for.
   for (const o of ENT) if (o != e) {
     const [u, ah] = lcl(e, o.x, o.z), gap = ah - e.l - (o.l || .3), sv = (o.e || o.dd) && o != car;
     if (ah > 0 && ah < 18 && abs(u) < 2 && (o.k || o == car || o.h > 0 || o.e || cos(o.a - e.a) > .5)) {
       if (sv && e.g < 1) e.ov = 150;
       want = min(want, sv && gap > 1 ? max(.06, (gap - 3) * .03) : (gap - 3) * .03);
-      hb |= o == F;
     }
   }
-  if ((e.hk = hb && e.s < .03 ? e.hk + k || k : 0) > 110) e.hk = 0, play(S_HONK, ...spatial(e.x, e.z));
   e.s = max(0, toward(e.s, want, (want < e.s ? .02 : .004) * k));
   const da = angDiff(e.a, at2(ox, oz)) * min(1, .15 * k);
   e.a += da; e.t = e.a; e.st = clamp(da * 9, -1, 1);
@@ -1705,18 +1700,8 @@ function create() {
   tm = tx(14, 46, 0, 22);
   pop = tx(14, 74, 0, 20, '#7f7');
   // title card over the live 3D scene: fades out on the first input, then the timer starts
-  // title card in the style of the cover logo: pink presenter line, white / yellow heavy italic title with a black
-  // outline, black band with the edition (pink) and the goal
-  const LF = { fontFamily: '"Arial Black",sans-serif', fontStyle: 'bold italic', strokeThickness: 10 };
-  TT = [A.graphics().fillStyle(0).fillRoundedRect(160, 330, 480, 96, 22),
-    tx(400, 150, .5, 24, '#ffa8d8', 'BIPBOP LABS PRESENTS', LF), tx(400, 214, .5, 64, '#fff', 'GRAND THEFT', LF), tx(400, 286, .5, 76, '#ffc800', 'BANANA', LF),
-    tx(400, 361, .5, 30, '#ff9ccf', 'PRE-REVENUE EDITION', LF), tx(400, 405, .5, 20, '#fff', '3 MINUTOS PARA HACER PLATA', LF)];
-  // title dim: darkens the scene and the HUD under the title card
-  DM = A.rectangle(400, 300, 800, 600, 0).setDepth(1);
   ring = A.graphics(); rtx = tx(400, 360, .5, 18);
   big = tx(400, 260, .5, 56, '#fff', '', { align: 'center' });
-  hint = tx(400, 550, .5);
-  for (const t of [...TT, hint]) t.setDepth(2);
   ah = tx(790, 590, 1); // altitude / speed while flying
   // minimap (top-right 140x140): dark frame, static map layer, dynamic dots layer, border
   const K = A.graphics().fillStyle(0x2a6aa0).fillRect(650, 10, 140, 140).createGeometryMask(); // sea; clips the layers
@@ -1726,6 +1711,15 @@ function create() {
   // wanted stars: gray row with the filled (yellow) ones drawn over it
   tx(675, 152, 0, 30, '#666', '*****');
   st1 = tx(675, 152, 0, 30, '#fd0');
+  // created last so they draw on top: title dim (darkens the scene and the HUD), title card, button hint
+  DM = A.rectangle(400, 300, 800, 600, 0);
+  // title card in the style of the cover logo: pink presenter line, white / yellow heavy italic title with a black
+  // outline, black band with the edition (pink) and the goal
+  const LF = { fontFamily: '"Arial Black",sans-serif', fontStyle: 'bold italic', strokeThickness: 10 };
+  TT = [A.graphics().fillStyle(0).fillRoundedRect(160, 330, 480, 96, 22),
+    tx(400, 150, .5, 24, '#ffa8d8', 'BIPBOP LABS PRESENTS', LF), tx(400, 214, .5, 64, '#fff', 'GRAND THEFT', LF), tx(400, 286, .5, 76, '#ffc800', 'BANANA', LF),
+    tx(400, 361, .5, 30, '#ff9ccf', 'PRE-REVENUE EDITION', LF), tx(400, 405, .5, 20, '#fff', '3 MINUTOS PARA HACER PLATA', LF)];
+  hint = tx(400, 550, .5);
   restart();
 }
 function update(time, dt) {
@@ -1776,7 +1770,7 @@ function update(time, dt) {
   dl(['mt', modelMat(ex, 0, ez, 0), 1]);
   updateWorld(k);
   // windsock: swings with a slowly turning wind, droops when it calms; radar: one turn per ~5 s
-  dl(['ws', modelMat(70, 5.8, -45, T / 5e3 + sin(T / 1300), sin(T / 900) * .2 - .25 - H2), , 36], ['rd', modelMat(200, 18.2, -92, T / 800, .3)]);
+  dl(['ws', modelMat(70, 5.8, -45, T / 5e3 + sin(T / 1300), sin(T / 900) * .2 - .25 - H2), , 36]);
   for (const q of PL) { const B = modelMat(q.x, q.y + 1.2, q.z, q.a, q.p, q.r); dl(['av', B, , q.o], ['pp', mul(B, modelMat(0, 0, 3.8, 0, 0, q.q)), , q.o]); }
   for (const b of BOOM) {
     fly(b, k, .012); b.a += .1 * k; b.t -= k;
@@ -1818,7 +1812,7 @@ function update(time, dt) {
   const U = 'B1  ';
   hint.setText(E ? 'START  REINICIAR' : DA ? DL + ' $' + (DA | 0) : J || PJ ? '' :
     foot ? NP || near ? U + (NP || near.e ? 'SUBIR' : 'ROBAR') : TI > 0 ? 'PALANCA MOVER   B1 SUBIR AL AUTO   B2 DISPARAR' : '' :
-    inP ? P.g ? (P.s < .03 ? U + 'BAJAR\n' : '') + 'B3 GAS  B2 FRENO  ↓ SUBIR  ↑ BAJAR' : '' :
+    inP ? P.g ? (P.s < .03 ? U + 'BAJAR\n' : '') + 'B3 GAS  B2 FRENO' : '' :
     car.ss > 30 ? U + 'BAJAR' : '');
   ah.setText(inP ? 'ALT ' + (P.y | 0) + 'm\n' + (P.s * 216 | 0) + ' km/h' : '');
   big.setText(E ? E + '\n' + fmt(MO) : '');
